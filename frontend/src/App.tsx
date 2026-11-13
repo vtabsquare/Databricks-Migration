@@ -900,6 +900,34 @@ function isDemoUserLoggedIn(): boolean {
   }
 }
 
+function getEmbedOrIframe(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("embed") === "true" || params.get("demo") === "true" || params.get("autologin") === "true") {
+      return true;
+    }
+    return window.self !== window.top;
+  } catch {
+    return false;
+  }
+}
+
+function getInitialStage(): string {
+  if (typeof window === "undefined") return "Sources";
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get("stage")?.toLowerCase();
+    if (s === "studio" || s === "7" || s === "workflow" || s === "migration workflow") return "Migration Workflow";
+    if (s === "deployments" || s === "8" || s === "deploy") return "Deployments";
+    if (s === "lifecycle" || s === "9") return "Lifecycle";
+    if (s === "discovery" || s === "4") return "Discovery";
+    if (s === "sources" || s === "3") return "Sources";
+    if (s === "projects" || s === "1") return "Projects";
+  } catch {}
+  return isDemoUserLoggedIn() || getEmbedOrIframe() ? "Sources" : "Projects";
+}
+
 function buildMasterMedallionTemplate(inv?: any[], src?: any[]) {
   if (isDemoUserLoggedIn()) {
     return DEMO_LOGISTICS_PROMPT;
@@ -930,13 +958,53 @@ function buildMasterMedallionTemplate(inv?: any[], src?: any[]) {
 }
 
 export default function App() {
-  const [ready, setReady] = useState(!!localStorage.getItem("mf_token"));
+  const isEmbedMode = useMemo(() => getEmbedOrIframe(), []);
+  const [ready, setReady] = useState(() => {
+    const token = localStorage.getItem("mf_token");
+    if (!token) return false;
+    if (getEmbedOrIframe()) {
+      const u = getUserFromToken();
+      return (u?.username || "").toLowerCase() === "vtabpublicuser@gmail.com";
+    }
+    return true;
+  });
+  const [autoLoggingIn, setAutoLoggingIn] = useState(() => {
+    if (!getEmbedOrIframe()) return false;
+    const token = localStorage.getItem("mf_token");
+    if (!token) return true;
+    const u = getUserFromToken();
+    return (u?.username || "").toLowerCase() !== "vtabpublicuser@gmail.com";
+  });
   const currentUserInfo = useMemo(() => getUserFromToken(), [ready]);
   const isDemoAccount = useMemo(() => {
-    return (currentUserInfo?.username || "").trim().toLowerCase() === "vtabpublicuser@gmail.com";
-  }, [currentUserInfo]);
+    return isEmbedMode || (currentUserInfo?.username || "").trim().toLowerCase() === "vtabpublicuser@gmail.com";
+  }, [currentUserInfo, isEmbedMode]);
   const [showLogin, setShowLogin] = useState(false);
-  const [page, setPage] = useState(isDemoUserLoggedIn() ? "Sources" : "Projects");
+  const [page, setPage] = useState(getInitialStage);
+
+  useEffect(() => {
+    if (isEmbedMode) {
+      const currentToken = localStorage.getItem("mf_token");
+      const u = getUserFromToken();
+      if (!currentToken || (u?.username || "").toLowerCase() !== "vtabpublicuser@gmail.com") {
+        setAutoLoggingIn(true);
+        requestApi("/demo/token")
+          .then((data: any) => {
+            if (data?.access_token) {
+              localStorage.setItem("mf_token", data.access_token);
+              setReady(true);
+              setShowLogin(false);
+            }
+          })
+          .catch((err) => {
+            console.error("Auto-login error:", err);
+          })
+          .finally(() => {
+            setAutoLoggingIn(false);
+          });
+      }
+    }
+  }, [isEmbedMode]);
   const [deploymentTab, setDeploymentTab] = useState<"dev" | "waves">("dev");
   const [deployActiveEnv, setDeployActiveEnv] = useState<"DEV" | "TEST" | "UAT" | "PROD" | "ALL">("DEV");
   const [deployLogEnvFilter, setDeployLogEnvFilter] = useState<"ALL" | "DEV" | "TEST" | "UAT" | "PROD">("DEV");
@@ -3530,6 +3598,24 @@ export default function App() {
     if (name === "Deployments" || name === "Deployment" || name === "Waves") return "Deployment";
     return name;
   };
+
+  if (autoLoggingIn || (isEmbedMode && !ready)) {
+    return (
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        background: "#0b132b",
+        color: "#38bdf8",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+      }}>
+        <div style={{ width: 44, height: 44, border: "3px solid rgba(56, 189, 248, 0.2)", borderTopColor: "#38bdf8", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+        <p style={{ marginTop: 18, fontSize: "15px", color: "#94a3b8", fontWeight: 500 }}>Connecting to Databricks Migration Demo...</p>
+      </div>
+    );
+  }
 
   if (!ready && !showLogin) return <LandingPage onLaunch={() => setShowLogin(true)} />;
   if (!ready && showLogin) return <Login onBack={() => setShowLogin(false)} done={() => setReady(true)} />;

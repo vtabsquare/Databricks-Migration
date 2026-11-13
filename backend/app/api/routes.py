@@ -538,6 +538,34 @@ def login(data:LoginIn,db:Session=Depends(get_db)):
             'token_type': 'bearer', 'role': user.role, 'username': subject, 'email': user.email or subject}
 
 
+@router.get("/demo/token")
+@router.post("/demo/token")
+def demo_token_api(db: Session = Depends(get_db)):
+    from app.services.demo_mock import DEMO_MOCK_USER
+    from app.models.entities import User
+    from app.core.security import hash_password, create_access_token
+    user = db.scalar(select(User).where((User.username == DEMO_MOCK_USER) | (User.email == DEMO_MOCK_USER)))
+    if not user:
+        user = User(
+            id=uid("USR"),
+            username=DEMO_MOCK_USER,
+            email=DEMO_MOCK_USER,
+            password_hash=hash_password("DemoPublicUser2026!"),
+            role="ADMIN",
+            is_verified=True,
+        )
+        db.add(user)
+        db.commit()
+    token = create_access_token(DEMO_MOCK_USER, "ADMIN", getattr(user, "session_version", 1))
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "role": "ADMIN",
+        "username": DEMO_MOCK_USER,
+        "email": DEMO_MOCK_USER,
+    }
+
+
 @router.post("/projects")
 def projects_create(data:ProjectIn,db:Session=Depends(get_db),user=Depends(auth)):
     creator = str(user.get("sub") or "admin")

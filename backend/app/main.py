@@ -55,12 +55,14 @@ class SecurityHeaders(BaseHTTPMiddleware):
             return await call_next(request)
         response=await call_next(request)
         response.headers["X-Content-Type-Options"]="nosniff"
-        response.headers["X-Frame-Options"]="DENY"
-        response.headers["Referrer-Policy"]="no-referrer"
+        response.headers["Referrer-Policy"]="strict-origin-when-cross-origin"
+        # Allow iframe embedding on client websites and portal integration
+        if "X-Frame-Options" in response.headers:
+            del response.headers["X-Frame-Options"]
         if request.url.path.startswith("/docs") or request.url.path.startswith("/redoc"):
-            response.headers["Content-Security-Policy"]=("default-src 'self' https: data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https:; frame-ancestors 'none';")
+            response.headers["Content-Security-Policy"]=("default-src 'self' https: data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https:; frame-ancestors *;")
         else:
-            response.headers["Content-Security-Policy"]="default-src 'self'; frame-ancestors 'none'"
+            response.headers["Content-Security-Policy"]="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:; img-src 'self' https: data: blob:; font-src 'self' https: data:; connect-src 'self' https: http: ws: wss:; frame-ancestors *;"
         return response
 app.add_middleware(SecurityHeaders)
 app.include_router(router)
