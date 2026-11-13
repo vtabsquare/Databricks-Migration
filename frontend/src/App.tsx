@@ -1154,6 +1154,15 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<"idle" | "loading" | "success">("idle");
   const [syncContext, setSyncContext] = useState<string>("Sync");
   const prevOperatingRef = useRef(false);
+  const [operationOverlay, setOperationOverlay] = useState<{
+    status: "loading" | "done" | "error";
+    title: string;
+    subtitle: string;
+  } | null>(null);
+  const activeOpTitleRef = useRef<string>("Executing Operation");
+  const opStartTimeRef = useRef<number>(0);
+  const doneTimerRef = useRef<any>(null);
+  const finishTimeoutRef = useRef<any>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const [promptText, setPromptText] = useState(
@@ -1650,34 +1659,124 @@ export default function App() {
   useEffect(() => {
     if (isOperating && !prevOperatingRef.current) {
       setSyncStatus("loading");
-      if (isRefiningPlan) {
-        setSyncContext("Refining Plan...");
-      } else if (promptRunning || autoRunning) {
-        setSyncContext("Generating Plan...");
-      } else if (page === "Deployments" || page === "Deployment" || page === "Waves" || promptSpec?.status === "DEPLOYING_DEV" || medDeployment?.status === "RUNNING") {
-        setSyncContext("Deploying to DEV...");
+      if (doneTimerRef.current) {
+        clearTimeout(doneTimerRef.current);
+        doneTimerRef.current = null;
+      }
+      if (finishTimeoutRef.current) {
+        clearTimeout(finishTimeoutRef.current);
+        finishTimeoutRef.current = null;
+      }
+      opStartTimeRef.current = Date.now();
+
+      let opTitle = "Processing Operation";
+      let opSubtitle = msg || "Executing pipeline request, please wait...";
+
+      const lowerMsg = (msg || "").toLowerCase();
+
+      if (lowerMsg.includes("resetting demo") || lowerMsg.includes("reset demo")) {
+        opTitle = "Resetting Demo Studio";
+        opSubtitle = "Restoring clean Step 1 state for interactive demonstration...";
+      } else if (isRefiningPlan || lowerMsg.includes("refining")) {
+        opTitle = "Refining Architecture Plan";
+        opSubtitle = msg || "Re-grounding Medallion nodes against database schemas...";
+      } else if (promptSpec?.status === "GENERATING_ARTIFACTS" || lowerMsg.includes("generating")) {
+        opTitle = "Generating Medallion Artifacts";
+        opSubtitle = "Synthesizing Bronze, Silver and Gold Delta Lake pipelines...";
+      } else if (promptSpec?.status === "DEPLOYING_DEV" || medDeployment?.status === "RUNNING" || lowerMsg.includes("deploying")) {
+        opTitle = "Deploying to Databricks DEV";
+        opSubtitle = "Executing Delta DDL, Deep Clone data sync & quality gates...";
+      } else if (autoRunning || lowerMsg.includes("promotion") || lowerMsg.includes("promoting")) {
+        opTitle = "Promoting Across Environments";
+        opSubtitle = "Orchestrating end-to-end promotion across TEST, UAT and PROD...";
+      } else if (lowerMsg.includes("grounding") || lowerMsg.includes("parsing")) {
+        opTitle = "Parsing & Grounding Prompt";
+        opSubtitle = "Analyzing business prompt and grounding against discovered schema...";
+      } else if (lowerMsg.includes("validating") || lowerMsg.includes("validation")) {
+        opTitle = "Validating in Databricks";
+        opSubtitle = "Verifying target catalogs, schemas, and medallion syntax...";
+      } else if (lowerMsg.includes("approving") || lowerMsg.includes("approved")) {
+        opTitle = "Approving Medallion Artifacts";
+        opSubtitle = "Recording validation approvals for DEV deployment...";
+      } else if (manualSyncing) {
+        opTitle = "Syncing Databricks Environment";
+        opSubtitle = "Refreshing clusters, catalogs, and active deployments...";
+      } else if (page === "Deployments" || page === "Deployment" || page === "Waves") {
+        opTitle = "Deploying to Databricks";
+        opSubtitle = msg || "Executing deployment tasks and running reconciliation...";
       } else if (page === "Environment Setup") {
-        setSyncContext("Provisioning DEV...");
+        opTitle = "Provisioning DEV Environment";
+        opSubtitle = msg || "Connecting and validating Databricks workspace...";
       } else if (page === "Discovery") {
-        setSyncContext("Running Discovery...");
+        opTitle = "Running Schema Discovery";
+        opSubtitle = msg || "Extracting tables, views, procedures and data types...";
       } else if (page === "Inventory") {
-        setSyncContext("Cataloging Inventory...");
+        opTitle = "Cataloging Inventory";
+        opSubtitle = msg || "Classifying database objects and complexity...";
       } else if (page === "Sources") {
-        setSyncContext("Testing Source...");
-      } else if (page === "Migration Workflow") {
-        setSyncContext("Processing Studio...");
+        opTitle = "Testing Source Connectivity";
+        opSubtitle = msg || "Verifying database connection credentials and latency...";
       } else {
-        setSyncContext("Syncing...");
+        opTitle = "Processing Operation";
+        opSubtitle = msg || "Executing operation, please wait...";
+      }
+
+      setSyncContext(opTitle + "...");
+      activeOpTitleRef.current = opTitle;
+      setOperationOverlay({
+        status: "loading",
+        title: opTitle,
+        subtitle: opSubtitle,
+      });
+    } else if (isOperating && prevOperatingRef.current) {
+      // Still in loading state, check if msg updated
+      if (msg && operationOverlay && operationOverlay.status === "loading" && operationOverlay.subtitle !== msg) {
+        setOperationOverlay((prev) => (prev ? { ...prev, subtitle: msg } : null));
       }
     } else if (!isOperating && prevOperatingRef.current) {
+      // Operation completed!
       setSyncStatus("success");
-      const timer = setTimeout(() => {
-        setSyncStatus("idle");
-      }, 1500);
-      return () => clearTimeout(timer);
+      const currentMsg = msg || "";
+      const lower = currentMsg.toLowerCase();
+      const isError = Boolean(
+        currentMsg &&
+        !lower.includes("passed") &&
+        !lower.includes("success") &&
+        !lower.includes("approved") &&
+        !lower.includes("ready") &&
+        !lower.includes("completed") &&
+        !lower.includes("valid") &&
+        (lower.includes("failed") || lower.includes("error"))
+      );
+
+      const elapsed = Date.now() - opStartTimeRef.current;
+      const minDisplayTime = 400; // minimum 400ms display for smooth transition
+      const delay = Math.max(0, minDisplayTime - elapsed);
+
+      finishTimeoutRef.current = setTimeout(() => {
+        if (isError) {
+          setOperationOverlay({
+            status: "error",
+            title: `${activeOpTitleRef.current} Alert`,
+            subtitle: currentMsg || "Operation encountered an error.",
+          });
+        } else {
+          const doneSubtitle = currentMsg || `${activeOpTitleRef.current} completed successfully.`;
+          setOperationOverlay({
+            status: "done",
+            title: "Done!",
+            subtitle: doneSubtitle,
+          });
+
+          doneTimerRef.current = setTimeout(() => {
+            setOperationOverlay(null);
+            setSyncStatus("idle");
+          }, 1500);
+        }
+      }, delay);
     }
     prevOperatingRef.current = isOperating;
-  }, [isOperating, page, isRefiningPlan, promptRunning, autoRunning, promptSpec?.status, medDeployment?.status]);
+  }, [isOperating, msg, page, isRefiningPlan, promptRunning, autoRunning, promptSpec?.status, medDeployment?.status, manualSyncing]);
 
   const handleLiveSync = async () => {
     if (isOperating) return;
@@ -12697,6 +12796,256 @@ export default function App() {
                         Close &amp; Explore DEV Artifacts
                       </button>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Universal Global Operation Loading & Done Screen Overlay */}
+              {operationOverlay && (
+                <div
+                  className="global-loading-backdrop"
+                  onClick={() => {
+                    if (operationOverlay.status === "done" || operationOverlay.status === "error") {
+                      setOperationOverlay(null);
+                    }
+                  }}
+                >
+                  <div
+                    className="global-loading-card"
+                    style={{
+                      border: `1px solid ${
+                        operationOverlay.status === "done"
+                          ? "rgba(16, 185, 129, 0.45)"
+                          : operationOverlay.status === "error"
+                          ? "rgba(239, 68, 68, 0.45)"
+                          : "rgba(56, 189, 248, 0.35)"
+                      }`,
+                      boxShadow: `0 25px 60px -15px rgba(0, 0, 0, 0.92), 0 0 45px ${
+                        operationOverlay.status === "done"
+                          ? "rgba(16, 185, 129, 0.22)"
+                          : operationOverlay.status === "error"
+                          ? "rgba(239, 68, 68, 0.22)"
+                          : "rgba(56, 189, 248, 0.2)"
+                      }`,
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* Icon Graphic */}
+                    <div
+                      style={{
+                        width: 72,
+                        height: 72,
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        position: "relative",
+                        background:
+                          operationOverlay.status === "done"
+                            ? "linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.1))"
+                            : operationOverlay.status === "error"
+                            ? "linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(220, 38, 38, 0.1))"
+                            : "linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(99, 102, 241, 0.15))",
+                        border: `1px solid ${
+                          operationOverlay.status === "done"
+                            ? "rgba(16, 185, 129, 0.5)"
+                            : operationOverlay.status === "error"
+                            ? "rgba(239, 68, 68, 0.5)"
+                            : "rgba(56, 189, 248, 0.4)"
+                        }`,
+                      }}
+                    >
+                      {operationOverlay.status === "loading" && (
+                        <>
+                          <div
+                            style={{
+                              position: "absolute",
+                              inset: -5,
+                              borderRadius: "50%",
+                              border: "2px solid transparent",
+                              borderTopColor: "#38bdf8",
+                              borderRightColor: "#818cf8",
+                              animation: "spin 0.9s linear infinite",
+                            }}
+                          />
+                          <RefreshCw size={28} color="#38bdf8" className="spin" />
+                        </>
+                      )}
+
+                      {operationOverlay.status === "done" && (
+                        <CheckCircle2
+                          size={40}
+                          color="#34d399"
+                          style={{
+                            animation: "bounceCheck 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+                          }}
+                        />
+                      )}
+
+                      {operationOverlay.status === "error" && (
+                        <AlertCircle size={40} color="#f87171" />
+                      )}
+                    </div>
+
+                    {/* Status Pill */}
+                    <div>
+                      <span
+                        style={{
+                          fontSize: 10.5,
+                          fontWeight: 800,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                          padding: "3px 12px",
+                          borderRadius: 999,
+                          background:
+                            operationOverlay.status === "done"
+                              ? "rgba(16, 185, 129, 0.18)"
+                              : operationOverlay.status === "error"
+                              ? "rgba(239, 68, 68, 0.18)"
+                              : "rgba(56, 189, 248, 0.18)",
+                          color:
+                            operationOverlay.status === "done"
+                              ? "#34d399"
+                              : operationOverlay.status === "error"
+                              ? "#f87171"
+                              : "#38bdf8",
+                          border: `1px solid ${
+                            operationOverlay.status === "done"
+                              ? "rgba(16, 185, 129, 0.35)"
+                              : operationOverlay.status === "error"
+                              ? "rgba(239, 68, 68, 0.35)"
+                              : "rgba(56, 189, 248, 0.35)"
+                          }`,
+                        }}
+                      >
+                        {operationOverlay.status === "loading"
+                          ? "PROCESSING"
+                          : operationOverlay.status === "done"
+                          ? "COMPLETED"
+                          : "ALERT"}
+                      </span>
+                    </div>
+
+                    {/* Title */}
+                    <h3
+                      style={{
+                        margin: "2px 0 0 0",
+                        fontSize: operationOverlay.status === "done" ? 22 : 19,
+                        fontWeight: 800,
+                        color:
+                          operationOverlay.status === "done"
+                            ? "#34d399"
+                            : operationOverlay.status === "error"
+                            ? "#f87171"
+                            : "#f8fafc",
+                        letterSpacing: "-0.01em",
+                      }}
+                    >
+                      {operationOverlay.title}
+                    </h3>
+
+                    {/* Subtitle / Description */}
+                    <p
+                      style={{
+                        margin: 0,
+                        color: "#94a3b8",
+                        fontSize: 13,
+                        lineHeight: 1.55,
+                        maxWidth: 380,
+                      }}
+                    >
+                      {operationOverlay.subtitle}
+                    </p>
+
+                    {/* Shimmer Bar for Loading */}
+                    {operationOverlay.status === "loading" && (
+                      <div
+                        style={{
+                          width: "100%",
+                          height: 4,
+                          background: "rgba(51, 65, 85, 0.5)",
+                          borderRadius: 999,
+                          overflow: "hidden",
+                          marginTop: 6,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            background: "linear-gradient(90deg, #0284c7, #38bdf8, #818cf8, #0284c7)",
+                            backgroundSize: "200% 100%",
+                            animation: "shimmerBar 1.4s infinite linear",
+                            borderRadius: 999,
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Drain Bar for Done */}
+                    {operationOverlay.status === "done" && (
+                      <div
+                        style={{
+                          width: "100%",
+                          height: 3,
+                          background: "rgba(16, 185, 129, 0.2)",
+                          borderRadius: 999,
+                          overflow: "hidden",
+                          marginTop: 6,
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: "100%",
+                            background: "#10b981",
+                            animation: "progressDrainBar 1.5s linear forwards",
+                            borderRadius: 999,
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Action button: Done or Dismiss */}
+                    {operationOverlay.status === "done" && (
+                      <button
+                        type="button"
+                        onClick={() => setOperationOverlay(null)}
+                        style={{
+                          marginTop: 4,
+                          padding: "6px 22px",
+                          background: "rgba(16, 185, 129, 0.15)",
+                          border: "1px solid rgba(16, 185, 129, 0.35)",
+                          borderRadius: 8,
+                          color: "#34d399",
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        Done
+                      </button>
+                    )}
+
+                    {operationOverlay.status === "error" && (
+                      <button
+                        type="button"
+                        onClick={() => setOperationOverlay(null)}
+                        style={{
+                          marginTop: 6,
+                          padding: "8px 22px",
+                          background: "#1e293b",
+                          border: "1px solid #475569",
+                          borderRadius: 8,
+                          color: "#f1f5f9",
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Dismiss
+                      </button>
+                    )}
                   </div>
                 </div>
               )}

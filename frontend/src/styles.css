@@ -6542,3 +6542,33 @@
   letter-spacing: 0.04em;
   margin-left: 10px;
 }
+
+/* ==========================================================================
+   Global Universal Loading & Done Screen Overlay
+   ========================================================================== */
+@keyframes shimmerBar {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes progressDrainBar {
+  0% { width: 100%; }
+  100% { width: 0%; }
+}
+
+@keyframes bounceCheck {
+  0% { transform: scale(0.3); opacity: 0; }
+  65% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+@keyframes fadeInOverlay {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
