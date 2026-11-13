@@ -1181,6 +1181,7 @@ export default function App() {
   const [autoPromotionStatus, setAutoPromotionStatus] = useState<any>(null);
   const [showAutoAuthModal, setShowAutoAuthModal] = useState(false);
   const [showDemoSalesModal, setShowDemoSalesModal] = useState(false);
+  const [copiedSalesEmail, setCopiedSalesEmail] = useState(false);
   const hasAutoResetDemoRef = useRef(false);
   const [autoAuthLoading, setAutoAuthLoading] = useState(false);
   const refreshInFlight = useRef(new Set<string>());
@@ -12402,82 +12403,299 @@ export default function App() {
                 </div>
               )}
 
-              {/* Demo Version Sales & Contact Modal */}
+              {/* Concept 1: Enterprise Transformation Hub Modal */}
               {showDemoSalesModal && (
-                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, backdropFilter: "blur(6px)" }}>
-                  <div style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 16, padding: "28px 28px 24px 28px", maxWidth: 540, width: "90%", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.85)", textAlign: "center", position: "relative" }}>
+                <div
+                  style={{
+                    position: "fixed",
+                    inset: 0,
+                    background: "rgba(3, 7, 18, 0.85)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 1200,
+                    backdropFilter: "blur(8px)",
+                    padding: "20px 16px",
+                  }}
+                  onClick={(e) => {
+                    if (e.target === e.currentTarget) setShowDemoSalesModal(false);
+                  }}
+                >
+                  <div
+                    style={{
+                      background: "linear-gradient(145deg, #0b132b 0%, #0f172a 50%, #090d16 100%)",
+                      border: "1px solid rgba(56, 189, 248, 0.3)",
+                      borderRadius: 20,
+                      padding: "28px 32px 28px 32px",
+                      maxWidth: 920,
+                      width: "100%",
+                      maxHeight: "90vh",
+                      overflowY: "auto",
+                      boxShadow: "0 25px 60px -15px rgba(0, 0, 0, 0.95), 0 0 50px rgba(56, 189, 248, 0.15)",
+                      position: "relative",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 20,
+                    }}
+                  >
+                    {/* Close Button */}
                     <button
                       type="button"
                       onClick={() => setShowDemoSalesModal(false)}
-                      style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 18 }}
+                      style={{
+                        position: "absolute",
+                        top: 18,
+                        right: 18,
+                        background: "rgba(148, 163, 184, 0.1)",
+                        border: "1px solid rgba(148, 163, 184, 0.2)",
+                        borderRadius: 8,
+                        width: 32,
+                        height: 32,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#94a3b8",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                      }}
                       title="Close"
                     >
-                      ✕
+                      <X size={16} />
                     </button>
 
-                    {/* Icon Badge */}
-                    <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 56, height: 56, borderRadius: "50%", background: "linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(99, 102, 241, 0.2))", border: "1px solid rgba(99, 102, 241, 0.4)", marginBottom: 16 }}>
-                      <Lock size={26} color="#60a5fa" />
-                    </div>
-
-                    {/* Pill Badge */}
-                    <div style={{ marginBottom: 12 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", background: "rgba(56, 189, 248, 0.15)", color: "#38bdf8", border: "1px solid rgba(56, 189, 248, 0.3)", padding: "3px 10px", borderRadius: 999 }}>
-                        Demo Version Restricted
-                      </span>
-                    </div>
-
-                    {/* Title */}
-                    <h3 style={{ margin: "0 0 10px 0", fontSize: 20, fontWeight: 700, color: "#f8fafc" }}>
-                      Automated Promotion to PROD
-                    </h3>
-
-                    {/* Description */}
-                    <p style={{ color: "#94a3b8", fontSize: 13.5, lineHeight: 1.6, margin: "0 0 20px 0" }}>
-                      This automated end-to-end promotion chain across <b>TEST</b>, <b>UAT</b>, and <b>PROD</b> with Databricks Deep Clone and cross-catalog replication is restricted in the <b>Demo Version</b>.
-                    </p>
-
-                    {/* Contact Sales Card */}
-                    <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 10, padding: "16px 18px", marginBottom: 22, textAlign: "left" }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "#cbd5e1", marginBottom: 8 }}>
-                        Contact for full enterprise deployment &amp; production rollout:
+                    {/* Top Celebration Banner */}
+                    <div style={{ textAlign: "center", padding: "0 16px" }}>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(16, 185, 129, 0.12)", border: "1px solid rgba(16, 185, 129, 0.35)", borderRadius: 999, padding: "5px 14px", marginBottom: 12 }}>
+                        <CheckCircle2 size={15} color="#34d399" />
+                        <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: "0.06em", color: "#34d399", textTransform: "uppercase" }}>
+                          DEV Migration Demo Completed Successfully
+                        </span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#020617", border: "1px solid #475569", borderRadius: 8, padding: "10px 14px", gap: 10 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, overflow: "hidden" }}>
-                          <Mail size={16} color="#38bdf8" style={{ flexShrink: 0 }} />
-                          <span style={{ color: "#f1f5f9", fontWeight: 600, fontSize: 13.5, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            contactsales@vtabsquare.com
-                          </span>
+
+                      <h2 style={{ margin: "0 0 8px 0", fontSize: 26, fontWeight: 800, background: "linear-gradient(90deg, #ffffff 0%, #cbd5e1 50%, #93c5fd 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                        Enterprise Transformation Hub
+                      </h2>
+
+                      <p style={{ margin: 0, color: "#94a3b8", fontSize: 13.5, lineHeight: 1.5, maxWidth: 680, marginLeft: "auto", marginRight: "auto" }}>
+                        You've just witnessed automated <b>SQL Server → Databricks Medallion</b> pipeline deployment in real time. Full end-to-end promotion across <b>TEST</b>, <b>UAT</b>, and <b>PROD</b> with live Deep Clone is unlocked in the <b>Enterprise Edition</b>.
+                      </p>
+                    </div>
+
+                    {/* 2-Column Split: Features Left, Sales Right */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 20 }}>
+                      
+                      {/* Left Column: What Unlocks in Enterprise */}
+                      <div style={{ background: "rgba(15, 23, 42, 0.65)", border: "1px solid rgba(51, 65, 85, 0.6)", borderRadius: 14, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid rgba(51, 65, 85, 0.6)", paddingBottom: 10 }}>
+                          <Sparkles size={16} color="#38bdf8" />
+                          <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#f8fafc", letterSpacing: "0.02em" }}>
+                            What Unlocks in the Enterprise Edition
+                          </h4>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard?.writeText("contactsales@vtabsquare.com");
-                            setMsg("Copied contactsales@vtabsquare.com to clipboard");
-                          }}
-                          style={{ background: "#334155", border: "none", borderRadius: 6, color: "#93c5fd", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
-                          title="Copy email to clipboard"
-                        >
-                          Copy
-                        </button>
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                          {/* Feature 1 */}
+                          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(56, 189, 248, 0.12)", border: "1px solid rgba(56, 189, 248, 0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
+                              <Layers size={16} color="#38bdf8" />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
+                                Multi-Environment Promotion (TEST, UAT &amp; PROD)
+                              </div>
+                              <div style={{ fontSize: 11.5, color: "#94a3b8", lineHeight: 1.45 }}>
+                                Automated quality gate verification, catalog retargeting, and zero-downtime cutover across full enterprise SDLC tiers.
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Feature 2 */}
+                          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(129, 140, 248, 0.12)", border: "1px solid rgba(129, 140, 248, 0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
+                              <GitBranch size={16} color="#818cf8" />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
+                                Native Databricks DEEP CLONE &amp; CDC Streaming
+                              </div>
+                              <div style={{ fontSize: 11.5, color: "#94a3b8", lineHeight: 1.45 }}>
+                                Point-in-time state cloning, continuous change data capture (CDC), Delta Live Tables (DLT), and sub-second sync.
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Feature 3 */}
+                          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(52, 211, 153, 0.12)", border: "1px solid rgba(52, 211, 153, 0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
+                              <ShieldCheck size={16} color="#34d399" />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
+                                Unity Catalog Governance &amp; Fine-Grained RBAC
+                              </div>
+                              <div style={{ fontSize: 11.5, color: "#94a3b8", lineHeight: 1.45 }}>
+                                Automated tag inheritance, row/column-level masking, centralized access policies, and enterprise audit lineage.
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Feature 4 */}
+                          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(251, 191, 36, 0.12)", border: "1px solid rgba(251, 191, 36, 0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
+                              <Database size={16} color="#fbbf24" />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
+                                Multi-Source Heterogeneous Ingestion
+                              </div>
+                              <div style={{ fontSize: 11.5, color: "#94a3b8", lineHeight: 1.45 }}>
+                                Native high-throughput connectors for Oracle, Teradata, DB2, SAP HANA, Snowflake, and PostgreSQL into Databricks Lakehouse.
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Feature 5 */}
+                          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(236, 72, 153, 0.12)", border: "1px solid rgba(236, 72, 153, 0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
+                              <Shield size={16} color="#ec4899" />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>
+                                24/7 Migration Architect SLA Guarantee
+                              </div>
+                              <div style={{ fontSize: 11.5, color: "#94a3b8", lineHeight: 1.45 }}>
+                                Dedicated Databricks-certified enterprise architects with 99.99% uptime guarantee and Zero Data Loss SLA.
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Column: Production Consultation & Contact Sales */}
+                      <div style={{ background: "linear-gradient(180deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)", border: "1px solid rgba(99, 102, 241, 0.35)", borderRadius: 14, padding: "20px 22px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid rgba(51, 65, 85, 0.6)", paddingBottom: 10, marginBottom: 14 }}>
+                            <Workflow size={16} color="#818cf8" />
+                            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#f8fafc", letterSpacing: "0.02em" }}>
+                              Ready for Full Production?
+                            </h4>
+                          </div>
+
+                          <p style={{ margin: "0 0 16px 0", color: "#94a3b8", fontSize: 12.5, lineHeight: 1.5 }}>
+                            Schedule a 30-minute tailored architecture review and migration sizing session with our Databricks migration specialists.
+                          </p>
+
+                          {/* Primary CTA: Consultation */}
+                          <a
+                            href="mailto:contactsales@vtabsquare.com?subject=Enterprise%20Databricks%20Migration%20Architecture%20Consultation&amp;body=Hello%20VTAB%20Square%20Team,%0A%0AWe%20completed%20the%20Databricks%20Migration%20Factory%20demo%20and%20would%20like%20to%20discuss%20an%20Enterprise%20rollout.%0A%0AOrganization:%20%0ASource%20Databases%20(e.g.,%20SQL%20Server,%20Oracle):%20%0AEstimated%20Data%20Volume%20(TB):%20%0ATarget%20Databricks%20Environment:%20%0ATimeline:%20%0A%0ABest%20regards,"
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 10,
+                              padding: "13px 18px",
+                              borderRadius: 10,
+                              background: "linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)",
+                              color: "#ffffff",
+                              fontWeight: 700,
+                              fontSize: 13.5,
+                              textDecoration: "none",
+                              boxShadow: "0 4px 16px rgba(79, 70, 229, 0.4)",
+                              marginBottom: 16,
+                              textAlign: "center",
+                              transition: "transform 0.15s ease",
+                            }}
+                          >
+                            <Mail size={16} /> Book 30-Min Architecture Consultation
+                          </a>
+
+                          {/* Direct Contact Desk Card */}
+                          <div style={{ background: "#020617", border: "1px solid #334155", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                              Direct Enterprise Sales Desk
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, overflow: "hidden" }}>
+                                <Mail size={15} color="#38bdf8" style={{ flexShrink: 0 }} />
+                                <span style={{ color: "#f8fafc", fontWeight: 600, fontSize: 13, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                  contactsales@vtabsquare.com
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard?.writeText("contactsales@vtabsquare.com");
+                                  setCopiedSalesEmail(true);
+                                  setMsg("Copied contactsales@vtabsquare.com to clipboard");
+                                  setTimeout(() => setCopiedSalesEmail(false), 2500);
+                                }}
+                                style={{
+                                  background: copiedSalesEmail ? "rgba(16, 185, 129, 0.2)" : "#1e293b",
+                                  border: `1px solid ${copiedSalesEmail ? "#10b981" : "#475569"}`,
+                                  borderRadius: 6,
+                                  color: copiedSalesEmail ? "#34d399" : "#93c5fd",
+                                  padding: "5px 10px",
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  whiteSpace: "nowrap",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 5,
+                                  transition: "all 0.2s ease",
+                                }}
+                                title="Copy email to clipboard"
+                              >
+                                {copiedSalesEmail ? <Check size={12} /> : <Copy size={12} />}
+                                {copiedSalesEmail ? "Copied!" : "Copy"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Value Metrics / Trust Badges */}
+                        <div style={{ borderTop: "1px solid rgba(51, 65, 85, 0.6)", paddingTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 14 }}>⚡</span>
+                            <span style={{ fontSize: 12, color: "#cbd5e1" }}>
+                              <b style={{ color: "#f1f5f9" }}>5-Day Pilot POC:</b> Tested on your real database schemas
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 14 }}>🛡️</span>
+                            <span style={{ fontSize: 12, color: "#cbd5e1" }}>
+                              <b style={{ color: "#f1f5f9" }}>Zero Data Loss SLA:</b> Parity checksums &amp; row-hash validation
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 14 }}>🚀</span>
+                            <span style={{ fontSize: 12, color: "#cbd5e1" }}>
+                              <b style={{ color: "#f1f5f9" }}>10x Faster Deployment:</b> Prompt-to-Medallion code generation
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
+                    {/* Bottom Footer Actions */}
+                    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", borderTop: "1px solid rgba(51, 65, 85, 0.5)", paddingTop: 16, marginTop: 4 }}>
                       <button
                         type="button"
                         onClick={() => setShowDemoSalesModal(false)}
-                        style={{ padding: "9px 20px", background: "#1e293b", border: "1px solid #475569", borderRadius: 8, color: "#cbd5e1", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                        style={{
+                          padding: "9px 22px",
+                          background: "#1e293b",
+                          border: "1px solid #475569",
+                          borderRadius: 8,
+                          color: "#cbd5e1",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          transition: "all 0.2s ease",
+                        }}
                       >
-                        Close
+                        Close &amp; Explore DEV Artifacts
                       </button>
-                      <a
-                        href="mailto:contactsales@vtabsquare.com?subject=Migration%20Factory%20-%20PROD%20Promotion%20Enterprise%20Inquiry"
-                        style={{ padding: "9px 20px", background: "linear-gradient(135deg, #2563eb, #1d4ed8)", border: "none", borderRadius: 8, color: "#ffffff", fontSize: 13, fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8 }}
-                      >
-                        <Mail size={14} /> Contact Sales
-                      </a>
                     </div>
                   </div>
                 </div>
