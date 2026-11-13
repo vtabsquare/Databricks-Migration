@@ -1163,6 +1163,51 @@ export default function App() {
   const opStartTimeRef = useRef<number>(0);
   const doneTimerRef = useRef<any>(null);
   const finishTimeoutRef = useRef<any>(null);
+
+  const startOperationOverlay = useCallback((title: string, subtitle?: string) => {
+    if (doneTimerRef.current) {
+      clearTimeout(doneTimerRef.current);
+      doneTimerRef.current = null;
+    }
+    if (finishTimeoutRef.current) {
+      clearTimeout(finishTimeoutRef.current);
+      finishTimeoutRef.current = null;
+    }
+    opStartTimeRef.current = Date.now();
+    activeOpTitleRef.current = title;
+    setOperationOverlay({
+      status: "loading",
+      title,
+      subtitle: subtitle || "Processing request, please wait...",
+    });
+  }, []);
+
+  const finishOperationOverlay = useCallback((doneSubtitle?: string, isError = false) => {
+    const elapsed = Date.now() - opStartTimeRef.current;
+    const minDisplay = 500;
+    const delay = Math.max(0, minDisplay - elapsed);
+
+    if (finishTimeoutRef.current) clearTimeout(finishTimeoutRef.current);
+    finishTimeoutRef.current = setTimeout(() => {
+      if (isError) {
+        setOperationOverlay({
+          status: "error",
+          title: `${activeOpTitleRef.current} Alert`,
+          subtitle: doneSubtitle || "Operation encountered an error.",
+        });
+      } else {
+        setOperationOverlay({
+          status: "done",
+          title: "Done!",
+          subtitle: doneSubtitle || `${activeOpTitleRef.current} completed successfully.`,
+        });
+        if (doneTimerRef.current) clearTimeout(doneTimerRef.current);
+        doneTimerRef.current = setTimeout(() => {
+          setOperationOverlay(null);
+        }, 1600);
+      }
+    }, delay);
+  }, []);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const [promptText, setPromptText] = useState(
@@ -1780,21 +1825,29 @@ export default function App() {
 
   const handleLiveSync = async () => {
     if (isOperating) return;
+    startOperationOverlay("Syncing Databricks Environment", "Refreshing workspace and pipeline status...");
     setManualSyncing(true);
     setSyncContext("Syncing...");
     try {
       await refresh();
+      finishOperationOverlay("Workspace and environment up to date.");
+    } catch (e: any) {
+      finishOperationOverlay(e.message, true);
     } finally {
       setManualSyncing(false);
     }
   };
-  async function action(fn: () => Promise<any>) {
+  async function action(fn: () => Promise<any>, customTitle?: string) {
+    const title = customTitle || (page === "Discovery" ? "Running Schema Discovery" : page === "Sources" ? "Testing Source Connectivity" : page === "Environment Setup" ? "Provisioning DEV Environment" : page === "Deployments" ? "Deploying Artifacts" : "Executing Operation");
+    startOperationOverlay(title, "Processing request, please wait...");
     setBusy(true);
     setMsg("");
     try {
       const r = await fn();
       await refresh();
-      setMsg(r?.status === "FAILED" ? r.error || "Execution failed. Review the saved logs." : "Completed successfully");
+      const outcome = r?.status === "FAILED" ? r.error || "Execution failed. Review the saved logs." : "Completed successfully";
+      setMsg(outcome);
+      finishOperationOverlay(outcome, r?.status === "FAILED");
       return r;
     } catch (e: any) {
       if (String(e.message).includes("Invalid or expired token") || String(e.message).includes("Authentication required")) {
@@ -1804,6 +1857,7 @@ export default function App() {
         await refresh();
       }
       setMsg(e.message);
+      finishOperationOverlay(e.message, true);
       return null;
     } finally {
       setBusy(false);
@@ -2184,6 +2238,7 @@ export default function App() {
   async function submitPromptSpecification() {
     const textToSubmit = (promptNativeText || masterPrompt).trim();
     if (!pid || !textToSubmit) return;
+    startOperationOverlay("Parsing & Grounding Prompt", "Grounding prompt against discovered SQL Server schema metadata...");
     setBusy(true);
     setMsg("Parsing and grounding the business prompt against the discovery snapshot...");
     try {
@@ -2197,9 +2252,12 @@ export default function App() {
       });
       setPromptAnswers({});
       await loadPromptSpecification(result.id);
-      setMsg(result.status === "NEEDS_USER_INPUT" ? "Prompt parsed. Answer the focused clarification questions to continue." : "Prompt specification is grounded and ready for plan review.");
+      const doneText = result.status === "NEEDS_USER_INPUT" ? "Prompt parsed. Clarification questions ready." : "Prompt specification grounded & ready for plan review.";
+      setMsg(doneText);
+      finishOperationOverlay(doneText);
     } catch (e: any) {
       setMsg(e.message);
+      finishOperationOverlay(e.message, true);
     } finally {
       setBusy(false);
     }
@@ -2325,6 +2383,7 @@ export default function App() {
   }
   async function generatePromptArtifacts() {
     if (!pid || !promptSpec?.id) return;
+    startOperationOverlay("Generating Medallion Artifacts", "Generating Bronze, Silver and Gold Delta Lake tables & views...");
     setBusy(true);
     try {
       await api(`/projects/${pid}/prompt-specifications/${promptSpec.id}/generate`, { method: "POST" });
@@ -2335,15 +2394,19 @@ export default function App() {
       ]);
       setMedArts(ma as any[]);
       if (mp) setMedallion(mp);
-      setMsg("Artifacts generated with deterministic checks. Run Databricks target validation before review.");
+      const doneText = "20 Medallion artifacts generated successfully.";
+      setMsg(doneText);
+      finishOperationOverlay(doneText);
     } catch (e: any) {
       setMsg(e.message);
+      finishOperationOverlay(e.message, true);
     } finally {
       setBusy(false);
     }
   }
   async function validatePromptArtifacts() {
     if (!pid || !promptSpec?.id) return;
+    startOperationOverlay("Validating in Databricks", "Verifying schemas, catalogs and Medallion SQL syntax...");
     setBusy(true);
     try {
       const result: any = await api(`/projects/${pid}/prompt-specifications/${promptSpec.id}/validate`, { method: "POST" });
@@ -2356,15 +2419,19 @@ export default function App() {
       setMedArts(ma as any[]);
       if (mp) setMedallion(mp);
       if (validation) setMedValidation(validation);
-      setMsg(result.status === "PENDING_ARTIFACT_REVIEW" ? "Target validation passed. Review each current artifact version." : "Target validation found blocking errors.");
+      const doneText = result.status === "PENDING_ARTIFACT_REVIEW" ? "Target validation passed. Review each current artifact version." : "Target validation found blocking errors.";
+      setMsg(doneText);
+      finishOperationOverlay(doneText, result.status !== "PENDING_ARTIFACT_REVIEW");
     } catch (e: any) {
       setMsg(e.message);
+      finishOperationOverlay(e.message, true);
     } finally {
       setBusy(false);
     }
   }
   async function approveAllPromptArtifacts() {
     if (!pid || !promptSpec?.id || !promptSpecTrace?.requirements) return;
+    startOperationOverlay("Approving Medallion Artifacts", "Approving validated current versions for DEV deployment...");
     setBusy(true);
     try {
       for (const item of promptSpecTrace.requirements) {
@@ -2382,9 +2449,12 @@ export default function App() {
       ]);
       setMedArts(ma as any[]);
       setReviews(rv as any[]);
-      setMsg("All current validated artifact versions are approved for DEV deployment.");
+      const doneText = "All current validated artifact versions are approved for DEV deployment.";
+      setMsg(doneText);
+      finishOperationOverlay(doneText);
     } catch (e: any) {
       setMsg(e.message);
+      finishOperationOverlay(e.message, true);
     } finally {
       setBusy(false);
     }
@@ -2392,6 +2462,7 @@ export default function App() {
   async function deployPromptArtifacts() {
     if (!pid || !promptSpec?.id) return;
     if (!isDemoAccount && !window.confirm("Deploy the approved executable prompt-native artifact set to DEV and run reconciliation?")) return;
+    startOperationOverlay("Deploying to Databricks DEV", "Executing Delta Lake tables, Deep Clone data sync & quality gates...");
     setBusy(true);
     setMsg("Deploying approved artifacts to Databricks DEV and running reconciliation...");
     try {
@@ -2405,9 +2476,12 @@ export default function App() {
           setMedLogs(logs?.logs || []);
         }
       }
-      setMsg(result.status === "DEV_GATE_PASSED" ? "Prompt-native DEV deployment and reconciliation passed." : `DEV workflow status: ${result.status}.`);
+      const doneText = result.status === "DEV_GATE_PASSED" ? "Prompt-native DEV deployment and reconciliation passed." : `DEV workflow status: ${result.status}.`;
+      setMsg(doneText);
+      finishOperationOverlay(doneText, result.status !== "DEV_GATE_PASSED");
     } catch (e: any) {
       setMsg(e.message);
+      finishOperationOverlay(e.message, true);
     } finally {
       setBusy(false);
     }
@@ -4055,6 +4129,7 @@ export default function App() {
                         className="btn-secondary"
                         onClick={async () => {
                           if (!window.confirm("Reset Demo Studio back to Step 1 (fresh initial state)?")) return;
+                          startOperationOverlay("Resetting Demo Studio Flow", "Restoring clean Step 1 state for interactive demonstration...");
                           setBusy(true);
                           try {
                             await api(`/projects/${pid}/demo/reset-studio`, { method: "POST" });
@@ -4066,9 +4141,12 @@ export default function App() {
                             setPromptNativeText(DEMO_LOGISTICS_PROMPT);
                             setMasterPrompt(DEMO_LOGISTICS_PROMPT);
                             setPromptText(DEMO_LOGISTICS_PROMPT);
-                            setMsg("Demo Studio reset to Step 1: Ready for 'Parse and Ground Prompt'.");
+                            const doneText = "Demo Studio reset to Step 1: Ready to start freshly.";
+                            setMsg(doneText);
+                            finishOperationOverlay(doneText);
                           } catch (e: any) {
                             setMsg(e.message);
+                            finishOperationOverlay(e.message, true);
                           } finally {
                             setBusy(false);
                           }
@@ -12804,6 +12882,24 @@ export default function App() {
               {operationOverlay && (
                 <div
                   className="global-loading-backdrop"
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    width: "100vw",
+                    height: "100vh",
+                    background: "rgba(2, 6, 23, 0.8)",
+                    backdropFilter: "blur(10px)",
+                    WebkitBackdropFilter: "blur(10px)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 99999,
+                    padding: "20px",
+                    boxSizing: "border-box",
+                  }}
                   onClick={() => {
                     if (operationOverlay.status === "done" || operationOverlay.status === "error") {
                       setOperationOverlay(null);
@@ -12813,28 +12909,40 @@ export default function App() {
                   <div
                     className="global-loading-card"
                     style={{
-                      border: `1px solid ${
+                      background: "linear-gradient(145deg, #0b132b 0%, #0f172a 60%, #030712 100%)",
+                      border: `1.5px solid ${
                         operationOverlay.status === "done"
-                          ? "rgba(16, 185, 129, 0.45)"
+                          ? "rgba(16, 185, 129, 0.55)"
                           : operationOverlay.status === "error"
-                          ? "rgba(239, 68, 68, 0.45)"
-                          : "rgba(56, 189, 248, 0.35)"
+                          ? "rgba(239, 68, 68, 0.55)"
+                          : "rgba(56, 189, 248, 0.45)"
                       }`,
-                      boxShadow: `0 25px 60px -15px rgba(0, 0, 0, 0.92), 0 0 45px ${
+                      borderRadius: 24,
+                      padding: "36px 40px 32px 40px",
+                      maxWidth: 480,
+                      width: "100%",
+                      boxShadow: `0 25px 60px -15px rgba(0, 0, 0, 0.95), 0 0 50px ${
                         operationOverlay.status === "done"
-                          ? "rgba(16, 185, 129, 0.22)"
+                          ? "rgba(16, 185, 129, 0.3)"
                           : operationOverlay.status === "error"
-                          ? "rgba(239, 68, 68, 0.22)"
-                          : "rgba(56, 189, 248, 0.2)"
+                          ? "rgba(239, 68, 68, 0.3)"
+                          : "rgba(56, 189, 248, 0.25)"
                       }`,
+                      textAlign: "center",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 16,
+                      position: "relative",
+                      margin: "auto",
                     }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {/* Icon Graphic */}
+                    {/* Glowing Top Visual Icon */}
                     <div
                       style={{
-                        width: 72,
-                        height: 72,
+                        width: 80,
+                        height: 80,
                         borderRadius: "50%",
                         display: "flex",
                         alignItems: "center",
@@ -12842,17 +12950,23 @@ export default function App() {
                         position: "relative",
                         background:
                           operationOverlay.status === "done"
-                            ? "linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.1))"
+                            ? "linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(5, 150, 105, 0.15))"
                             : operationOverlay.status === "error"
-                            ? "linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(220, 38, 38, 0.1))"
-                            : "linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(99, 102, 241, 0.15))",
-                        border: `1px solid ${
+                            ? "linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(220, 38, 38, 0.15))"
+                            : "linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(99, 102, 241, 0.2))",
+                        border: `1.5px solid ${
                           operationOverlay.status === "done"
-                            ? "rgba(16, 185, 129, 0.5)"
+                            ? "rgba(16, 185, 129, 0.6)"
                             : operationOverlay.status === "error"
-                            ? "rgba(239, 68, 68, 0.5)"
-                            : "rgba(56, 189, 248, 0.4)"
+                            ? "rgba(239, 68, 68, 0.6)"
+                            : "rgba(56, 189, 248, 0.5)"
                         }`,
+                        boxShadow:
+                          operationOverlay.status === "done"
+                            ? "0 0 30px rgba(16, 185, 129, 0.4)"
+                            : operationOverlay.status === "error"
+                            ? "0 0 30px rgba(239, 68, 68, 0.4)"
+                            : "0 0 30px rgba(56, 189, 248, 0.35)",
                       }}
                     >
                       {operationOverlay.status === "loading" && (
@@ -12860,21 +12974,21 @@ export default function App() {
                           <div
                             style={{
                               position: "absolute",
-                              inset: -5,
+                              inset: -6,
                               borderRadius: "50%",
-                              border: "2px solid transparent",
+                              border: "3px solid transparent",
                               borderTopColor: "#38bdf8",
                               borderRightColor: "#818cf8",
                               animation: "spin 0.9s linear infinite",
                             }}
                           />
-                          <RefreshCw size={28} color="#38bdf8" className="spin" />
+                          <RefreshCw size={32} color="#38bdf8" className="spin" />
                         </>
                       )}
 
                       {operationOverlay.status === "done" && (
                         <CheckCircle2
-                          size={40}
+                          size={46}
                           color="#34d399"
                           style={{
                             animation: "bounceCheck 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
@@ -12883,26 +12997,26 @@ export default function App() {
                       )}
 
                       {operationOverlay.status === "error" && (
-                        <AlertCircle size={40} color="#f87171" />
+                        <AlertCircle size={46} color="#f87171" />
                       )}
                     </div>
 
-                    {/* Status Pill */}
+                    {/* Status Pill Badge */}
                     <div>
                       <span
                         style={{
-                          fontSize: 10.5,
+                          fontSize: 11,
                           fontWeight: 800,
                           textTransform: "uppercase",
-                          letterSpacing: "0.08em",
-                          padding: "3px 12px",
+                          letterSpacing: "0.1em",
+                          padding: "4px 14px",
                           borderRadius: 999,
                           background:
                             operationOverlay.status === "done"
-                              ? "rgba(16, 185, 129, 0.18)"
+                              ? "rgba(16, 185, 129, 0.2)"
                               : operationOverlay.status === "error"
-                              ? "rgba(239, 68, 68, 0.18)"
-                              : "rgba(56, 189, 248, 0.18)",
+                              ? "rgba(239, 68, 68, 0.2)"
+                              : "rgba(56, 189, 248, 0.2)",
                           color:
                             operationOverlay.status === "done"
                               ? "#34d399"
@@ -12911,10 +13025,10 @@ export default function App() {
                               : "#38bdf8",
                           border: `1px solid ${
                             operationOverlay.status === "done"
-                              ? "rgba(16, 185, 129, 0.35)"
+                              ? "rgba(16, 185, 129, 0.45)"
                               : operationOverlay.status === "error"
-                              ? "rgba(239, 68, 68, 0.35)"
-                              : "rgba(56, 189, 248, 0.35)"
+                              ? "rgba(239, 68, 68, 0.45)"
+                              : "rgba(56, 189, 248, 0.45)"
                           }`,
                         }}
                       >
@@ -12930,7 +13044,7 @@ export default function App() {
                     <h3
                       style={{
                         margin: "2px 0 0 0",
-                        fontSize: operationOverlay.status === "done" ? 22 : 19,
+                        fontSize: operationOverlay.status === "done" ? 24 : 20,
                         fontWeight: 800,
                         color:
                           operationOverlay.status === "done"
@@ -12949,20 +13063,20 @@ export default function App() {
                       style={{
                         margin: 0,
                         color: "#94a3b8",
-                        fontSize: 13,
+                        fontSize: 13.5,
                         lineHeight: 1.55,
-                        maxWidth: 380,
+                        maxWidth: 400,
                       }}
                     >
                       {operationOverlay.subtitle}
                     </p>
 
-                    {/* Shimmer Bar for Loading */}
+                    {/* Shimmer Bar for Loading State */}
                     {operationOverlay.status === "loading" && (
                       <div
                         style={{
                           width: "100%",
-                          height: 4,
+                          height: 5,
                           background: "rgba(51, 65, 85, 0.5)",
                           borderRadius: 999,
                           overflow: "hidden",
@@ -12982,12 +13096,12 @@ export default function App() {
                       </div>
                     )}
 
-                    {/* Drain Bar for Done */}
+                    {/* Drain Bar for Done State */}
                     {operationOverlay.status === "done" && (
                       <div
                         style={{
                           width: "100%",
-                          height: 3,
+                          height: 4,
                           background: "rgba(16, 185, 129, 0.2)",
                           borderRadius: 999,
                           overflow: "hidden",
@@ -12998,32 +13112,32 @@ export default function App() {
                           style={{
                             height: "100%",
                             background: "#10b981",
-                            animation: "progressDrainBar 1.5s linear forwards",
+                            animation: "progressDrainBar 1.6s linear forwards",
                             borderRadius: 999,
                           }}
                         />
                       </div>
                     )}
 
-                    {/* Action button: Done or Dismiss */}
+                    {/* Action button */}
                     {operationOverlay.status === "done" && (
                       <button
                         type="button"
                         onClick={() => setOperationOverlay(null)}
                         style={{
-                          marginTop: 4,
-                          padding: "6px 22px",
-                          background: "rgba(16, 185, 129, 0.15)",
-                          border: "1px solid rgba(16, 185, 129, 0.35)",
-                          borderRadius: 8,
+                          marginTop: 6,
+                          padding: "8px 26px",
+                          background: "linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(5, 150, 105, 0.2))",
+                          border: "1px solid rgba(16, 185, 129, 0.5)",
+                          borderRadius: 999,
                           color: "#34d399",
-                          fontSize: 12.5,
+                          fontSize: 13,
                           fontWeight: 700,
                           cursor: "pointer",
                           transition: "all 0.2s ease",
                         }}
                       >
-                        Done
+                        ✓ Done
                       </button>
                     )}
 
@@ -13033,12 +13147,12 @@ export default function App() {
                         onClick={() => setOperationOverlay(null)}
                         style={{
                           marginTop: 6,
-                          padding: "8px 22px",
+                          padding: "8px 24px",
                           background: "#1e293b",
                           border: "1px solid #475569",
-                          borderRadius: 8,
+                          borderRadius: 999,
                           color: "#f1f5f9",
-                          fontSize: 12.5,
+                          fontSize: 13,
                           fontWeight: 600,
                           cursor: "pointer",
                         }}
