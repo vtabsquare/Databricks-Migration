@@ -592,6 +592,8 @@ def reset_demo_project_studio(db: Any, project_id: str) -> Dict[str, Any]:
         MigrationMapping,
         MigrationSource,
         MigrationEnvironmentPlan,
+        MigrationQualityGate,
+        MigrationRun,
         CanonicalRecord,
     )
     from app.models.canonical import (
@@ -605,12 +607,14 @@ def reset_demo_project_studio(db: Any, project_id: str) -> Dict[str, Any]:
     from datetime import datetime
     import json
 
-    # 1. Clear deployments, reconciliations, run steps, validations, and automated promotion records
+    # 1. Clear deployments, reconciliations, run steps, validations, quality gates, runs, and automated promotion records
     db.query(MigrationDeployment).filter(MigrationDeployment.project_id == project_id).delete()
     db.query(MigrationReconciliation).filter(MigrationReconciliation.project_id == project_id).delete()
     db.query(MigrationRunStep).filter(MigrationRunStep.project_id == project_id).delete()
     db.query(MigrationValidation).filter(MigrationValidation.project_id == project_id).delete()
     db.query(MigrationReconciliationDetail).filter(MigrationReconciliationDetail.project_id == project_id).delete()
+    db.query(MigrationQualityGate).filter(MigrationQualityGate.project_id == project_id).delete()
+    db.query(MigrationRun).filter(MigrationRun.project_id == project_id).delete()
     db.query(CanonicalRecord).filter(
         CanonicalRecord.project_id == project_id,
         CanonicalRecord.record_type.in_(["AUTOMATED_PROMOTION_RUN", "MASTER_MIGRATION_PLAN", "PROMPT_PROMOTION_PLAN"])

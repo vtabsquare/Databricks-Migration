@@ -1285,6 +1285,7 @@ export default function App() {
             setMedLogs([]);
             setDeployment({ environment: "DEV", status: "NOT_STARTED", logs: [] });
             setReconResult(null);
+            setLife([]);
             setAutoPromotionStatus(null);
             setShowAutoAuthModal(false);
             setShowDemoSalesModal(false);
@@ -2222,7 +2223,7 @@ export default function App() {
   }
   async function deployPromptArtifacts() {
     if (!pid || !promptSpec?.id) return;
-    if (!window.confirm("Deploy the approved executable prompt-native artifact set to DEV and run reconciliation?")) return;
+    if (!isDemoAccount && !window.confirm("Deploy the approved executable prompt-native artifact set to DEV and run reconciliation?")) return;
     setBusy(true);
     setMsg("Deploying approved artifacts to Databricks DEV and running reconciliation...");
     try {
@@ -4069,7 +4070,11 @@ export default function App() {
                         ? "Deploying to DEV (or click to retry if interrupted)"
                         : "Complete artifact review before DEV deployment";
 
-                      const isDevAlreadyPassed = environmentPassed("DEV");
+                      const isDevAlreadyPassed = promptSpec
+                        ? promptSpec.status === "DEV_GATE_PASSED"
+                        : isDemoAccount
+                        ? false
+                        : environmentPassed("DEV");
                       return (
                         <button
                           className="btn-primary-blue"
