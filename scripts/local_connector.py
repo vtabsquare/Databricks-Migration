@@ -1232,8 +1232,21 @@ class UniversalLocalAgent:
             or task["database"].casefold() == (configured_db or "").casefold()
             or (self.engine == "ORACLE")
         )
+        def _server_matches(task_s, local_s):
+            if not task_s or not local_s:
+                return True
+            ts, ls = task_s.casefold().strip(), local_s.casefold().strip()
+            if ts == ls:
+                return True
+            local_aliases = {"localhost", "127.0.0.1", ".", "(local)"}
+            if ts in local_aliases and (ls in local_aliases or any(ls.startswith(a + "\\") for a in local_aliases)):
+                return True
+            if ls in local_aliases and (ts in local_aliases or any(ts.startswith(a + "\\") for a in local_aliases)):
+                return True
+            return False
+
         if (task.get("source_id") != self.source_id
-                or (task.get("server") and task["server"].casefold() != self.server.casefold())
+                or not _server_matches(task.get("server"), self.server)
                 or not db_match
                 or (task.get("engine") and normalize_engine(task["engine"]) != self.engine)):
             raise ValueError("Connector source identity mismatch; reconfigure the agent explicitly")

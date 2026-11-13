@@ -29,7 +29,10 @@ def source(db, project_id, source_id):
 
 
 @router.get("/projects/{project_id}/sources/{source_id}/connector")
-def status(project_id: str, source_id: str, db: Session = Depends(get_db), _=Depends(auth)):
+def status(project_id: str, source_id: str, db: Session = Depends(get_db), current_user=Depends(auth)):
+    from app.services.demo_mock import is_demo_user, get_demo_connector_info
+    if is_demo_user(current_user.get("sub")):
+        return get_demo_connector_info(source_id)
     source(db, project_id, source_id)
     return connector_info(source_id)
 

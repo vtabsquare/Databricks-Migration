@@ -63,6 +63,7 @@ import {
   Filter,
   Shield,
   Info,
+  Mail,
 } from "lucide-react";
 
 import SourceConnectorControl from "./SourceConnectorControl";
@@ -887,12 +888,33 @@ function getUserFromToken(): { username: string; role: string; initials: string 
   }
 }
 
+export const DEMO_LOGISTICS_PROMPT =
+  "Migrate the database LogisticsMiniDemo to Databricks DEV. Bronze: ingest BRANCHES, CUSTOMERS, DELIVERYROUTES, DRIVERS, SHIPMENTS and VEHICLES. Silver: create cleaned views for Branches, Customers, DeliveryRoutes, Drivers, Shipments and Vehicles; calculate shipping charges per kilogram; create an idempotent MERGE loader usp_MergeDailySummary keyed by primary keys. Gold: create dim_branches, dim_drivers, dim_vehicles, dim_customers, fact_shipments, and monthly executive KPI aggregation marts.";
+
+function isDemoUserLoggedIn(): boolean {
+  try {
+    const user = getUserFromToken();
+    return (user?.username || "").trim().toLowerCase() === "vtabpublicuser@gmail.com";
+  } catch {
+    return false;
+  }
+}
 
 function buildMasterMedallionTemplate(inv?: any[], src?: any[]) {
+  if (isDemoUserLoggedIn()) {
+    return DEMO_LOGISTICS_PROMPT;
+  }
+
   const tableNames = (inv || [])
     .filter((i) => !i.type || i.type.toUpperCase().includes("TABLE"))
     .map((i) => (i.name.split(".").pop() || i.name).trim().toUpperCase())
     .filter(Boolean);
+
+  const isLogistics = tableNames.includes("BRANCHES") || tableNames.includes("SHIPMENTS") || src?.[0]?.database_name === "LogisticsMiniDemo";
+
+  if (isLogistics) {
+    return DEMO_LOGISTICS_PROMPT;
+  }
 
   const tablesStr = tableNames.length > 0
     ? tableNames.slice(0, 15).join(", ")
@@ -910,8 +932,11 @@ function buildMasterMedallionTemplate(inv?: any[], src?: any[]) {
 export default function App() {
   const [ready, setReady] = useState(!!localStorage.getItem("mf_token"));
   const currentUserInfo = useMemo(() => getUserFromToken(), [ready]);
+  const isDemoAccount = useMemo(() => {
+    return (currentUserInfo?.username || "").trim().toLowerCase() === "vtabpublicuser@gmail.com";
+  }, [currentUserInfo]);
   const [showLogin, setShowLogin] = useState(false);
-  const [page, setPage] = useState("Projects");
+  const [page, setPage] = useState(isDemoUserLoggedIn() ? "Sources" : "Projects");
   const [deploymentTab, setDeploymentTab] = useState<"dev" | "waves">("dev");
   const [deployActiveEnv, setDeployActiveEnv] = useState<"DEV" | "TEST" | "UAT" | "PROD" | "ALL">("DEV");
   const [deployLogEnvFilter, setDeployLogEnvFilter] = useState<"ALL" | "DEV" | "TEST" | "UAT" | "PROD">("DEV");
@@ -1064,7 +1089,9 @@ export default function App() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const [promptText, setPromptText] = useState(
-    "Migrate MigrationDemo from SQL Server to DEV Databricks",
+    isDemoUserLoggedIn()
+      ? DEMO_LOGISTICS_PROMPT
+      : "Migrate MigrationDemo from SQL Server to DEV Databricks",
   );
   const [promptPlan, setPromptPlan] = useState<any>(null);
   const [promptExecution, setPromptExecution] = useState<any>(null);
@@ -1076,13 +1103,17 @@ export default function App() {
   const [promotionExecution, setPromotionExecution] = useState<any>(null);
   const [promotionRunning, setPromotionRunning] = useState(false);
   const [masterPrompt, setMasterPrompt] = useState(
-    "Migrate MigrationDemo from SQL Server through DEV, TEST, UAT, and PROD Databricks",
+    isDemoUserLoggedIn()
+      ? DEMO_LOGISTICS_PROMPT
+      : "Migrate MigrationDemo from SQL Server through DEV, TEST, UAT, and PROD Databricks",
   );
   const [masterPlan, setMasterPlan] = useState<any>(null);
   const [masterExecution, setMasterExecution] = useState<any>(null);
   const [masterRunning, setMasterRunning] = useState(false);
   const [autoPromotionStatus, setAutoPromotionStatus] = useState<any>(null);
   const [showAutoAuthModal, setShowAutoAuthModal] = useState(false);
+  const [showDemoSalesModal, setShowDemoSalesModal] = useState(false);
+  const hasAutoResetDemoRef = useRef(false);
   const [autoAuthLoading, setAutoAuthLoading] = useState(false);
   const refreshInFlight = useRef(new Set<string>());
   const refreshScope = `${pid}|${page}`;
@@ -1093,7 +1124,9 @@ export default function App() {
   const [autoAuthText, setAutoAuthText] = useState("");
   const [autoRunning, setAutoRunning] = useState(false);
   const [promptNativeText, setPromptNativeText] = useState(
-    buildMasterMedallionTemplate()
+    isDemoUserLoggedIn()
+      ? DEMO_LOGISTICS_PROMPT
+      : buildMasterMedallionTemplate()
   );
   const [promptSourceId, setPromptSourceId] = useState<string>("");
   const [promptSpec, setPromptSpec] = useState<any>(null);
@@ -1233,6 +1266,33 @@ export default function App() {
         return;
       }
       if (id) {
+        if (isDemoAccount && !hasAutoResetDemoRef.current) {
+          try {
+            await requestApi(`/projects/${id}/demo/reset-studio`, { method: "POST" });
+            hasAutoResetDemoRef.current = true;
+            setDiscoveryResult(null);
+            setDiscoveryScanningSourceId(null);
+            setDiscoveryProgressStep(0);
+            setInventorySelectedIds([]);
+            setPromptSpec(null);
+            setPromptSpecPlan(null);
+            setPromptSpecTrace(null);
+            setPromptAnswers({});
+            setPromptAnalysis(null);
+            setMedArts([]);
+            setMedallion(null);
+            setMedDeployment(null);
+            setMedLogs([]);
+            setDeployment({ environment: "DEV", status: "NOT_STARTED", logs: [] });
+            setReconResult(null);
+            setAutoPromotionStatus(null);
+            setShowAutoAuthModal(false);
+            setShowDemoSalesModal(false);
+          } catch (err) {
+            console.warn("Demo auto-reset on page load:", err);
+          }
+        }
+
         const [d, l, c, s, i, m, a, is, dp, rv] = await Promise.all([
           api(`/projects/${id}/dashboard`),
           api(`/projects/${id}/lifecycle`),
@@ -1253,7 +1313,11 @@ export default function App() {
         setMappings(m as Mapping[]);
         setArtifacts(a as Artifact[]);
         setIssues(is as any[]);
-        if (!promptNativeText || promptNativeText.includes("MigrationDemo")) {
+        if (isDemoAccount) {
+          setPromptNativeText(DEMO_LOGISTICS_PROMPT);
+          setMasterPrompt(DEMO_LOGISTICS_PROMPT);
+          setPromptText(DEMO_LOGISTICS_PROMPT);
+        } else if (!promptNativeText || promptNativeText.includes("MigrationDemo") || promptNativeText.includes("database database")) {
           const tpl = buildMasterMedallionTemplate(i as Inv[], s as Source[]);
           setPromptNativeText(tpl);
           setMasterPrompt(tpl);
@@ -1445,6 +1509,14 @@ export default function App() {
   useEffect(() => {
     refresh();
   }, [ready, pid, page]);
+
+  useEffect(() => {
+    if (isDemoAccount) {
+      setPromptNativeText(DEMO_LOGISTICS_PROMPT);
+      setMasterPrompt(DEMO_LOGISTICS_PROMPT);
+      setPromptText(DEMO_LOGISTICS_PROMPT);
+    }
+  }, [isDemoAccount, page]);
 
   useEffect(() => {
     if (msg) {
@@ -1775,6 +1847,12 @@ export default function App() {
 
   async function authorizeAutomatedPromotion() {
     if (!pid) return;
+    if (isDemoAccount) {
+      setShowAutoAuthModal(false);
+      setShowDemoSalesModal(true);
+      setMsg("Demo Version: Automated promotion to PROD is restricted in Demo mode. Contact contactsales@vtabsquare.com for enterprise activation.");
+      return;
+    }
     setBusy(true);
     setAutoRunning(true);
     setMsg("Authorizing and starting end-to-end automated promotion to PROD...");
@@ -3399,11 +3477,11 @@ export default function App() {
   }
   const STAGE_CONFIG: Record<number, { page: string; label: string; phase: number; phaseName: string }> = {
     1: { page: "Projects", label: "Projects", phase: 1, phaseName: "Connect & Discover" },
-    2: { page: "Environment Setup", label: "Environment Setup", phase: 1, phaseName: "Connect & Discover" },
+    2: { page: "Environment Setup", label: isDemoAccount ? "Environment Setup (Demo 🔒)" : "Environment Setup", phase: 1, phaseName: "Connect & Discover" },
     3: { page: "Sources", label: "Sources", phase: 1, phaseName: "Connect & Discover" },
     4: { page: "Discovery", label: "Discovery", phase: 1, phaseName: "Connect & Discover" },
-    5: { page: "Inventory", label: "Inventory", phase: 2, phaseName: "Classify & Studio" },
-    6: { page: "Layer Classification", label: "Layer Classification", phase: 2, phaseName: "Classify & Studio" },
+    5: { page: "Inventory", label: isDemoAccount ? "Inventory (Demo Bypassed)" : "Inventory", phase: 2, phaseName: "Classify & Studio" },
+    6: { page: "Layer Classification", label: isDemoAccount ? "Layer Classification (Demo Bypassed)" : "Layer Classification", phase: 2, phaseName: "Classify & Studio" },
     7: { page: "Migration Workflow", label: "Migration Studio", phase: 2, phaseName: "Classify & Studio" },
     8: { page: "Deployments", label: "Deployment (DEV)", phase: 3, phaseName: "Deploy & Lifecycle" },
     9: { page: "Lifecycle", label: "Lifecycle & Waves", phase: 3, phaseName: "Deploy & Lifecycle" },
@@ -3536,6 +3614,12 @@ export default function App() {
                   : environmentConfig?.status === "READY" ? "DEV: Ready" : "DEV: Not tested"}
               </span>
             </div>
+
+            {isDemoAccount && (
+              <div className="demo-top-pill" title="Demo Presentation Mode Active">
+                <Lock size={11} /> Demo Version
+              </div>
+            )}
 
             {/* Multi-State Live Sync Pill */}
             <div
@@ -3748,29 +3832,105 @@ export default function App() {
                     <button
                       type="button"
                       className="btn-secondary"
-                      style={{ padding: "4px 12px", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 5, height: 28, color: "#2563eb", borderColor: "#93c5fd" }}
+                      disabled={isDemoAccount}
+                      style={{
+                        padding: "4px 12px",
+                        fontSize: 11,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        height: 28,
+                        color: "#2563eb",
+                        borderColor: "#93c5fd",
+                        ...(isDemoAccount
+                          ? {
+                              opacity: 0.38,
+                              cursor: "not-allowed",
+                              pointerEvents: "none",
+                              filter: "grayscale(25%)",
+                            }
+                          : {}),
+                      }}
                       onClick={() => {
-                        const text = buildMasterMedallionTemplate(inventory, sources);
+                        const text = isDemoAccount ? DEMO_LOGISTICS_PROMPT : buildMasterMedallionTemplate(inventory, sources);
                         setPromptNativeText(text);
                         setMasterPrompt(text);
                         setPromptText(text);
                         setPromptAnalysis(null);
                       }}
-                      title="Reset prompt to the single master template with your discovered tables"
+                      title={isDemoAccount ? "Demo Version: Template is locked" : "Reset prompt to the single master template with your discovered tables"}
                     >
                       <RotateCcw size={12} /> Reset to Master Template
                     </button>
+                    {isDemoAccount && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={async () => {
+                          if (!window.confirm("Reset Demo Studio back to Step 1 (fresh initial state)?")) return;
+                          setBusy(true);
+                          try {
+                            await api(`/projects/${pid}/demo/reset-studio`, { method: "POST" });
+                            setPromptSpec(null);
+                            setPromptSpecPlan(null);
+                            setPromptAnalysis(null);
+                            setMedArts([]);
+                            setMedDeployment(null);
+                            setPromptNativeText(DEMO_LOGISTICS_PROMPT);
+                            setMasterPrompt(DEMO_LOGISTICS_PROMPT);
+                            setPromptText(DEMO_LOGISTICS_PROMPT);
+                            setMsg("Demo Studio reset to Step 1: Ready for 'Parse and Ground Prompt'.");
+                          } catch (e: any) {
+                            setMsg(e.message);
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                        style={{
+                          padding: "4px 11px",
+                          fontSize: 11,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          height: 28,
+                          color: "#1d4ed8",
+                          background: "#eff6ff",
+                          borderColor: "#bfdbfe",
+                          fontWeight: 600,
+                        }}
+                        title="Reset the demo flow back to Step 1 so you can demonstrate the step-by-step clicks from scratch anytime"
+                      >
+                        <RotateCcw size={12} /> Reset Demo Flow (Step 1)
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn-secondary"
-                      style={{ padding: "4px 10px", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4, height: 28, color: "#64748b" }}
+                      disabled={isDemoAccount}
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: 11,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        height: 28,
+                        color: "#64748b",
+                        ...(isDemoAccount
+                          ? {
+                              opacity: 0.38,
+                              cursor: "not-allowed",
+                              pointerEvents: "none",
+                              filter: "grayscale(25%)",
+                            }
+                          : {}),
+                      }}
                       onClick={() => {
                         setPromptNativeText("");
                         setMasterPrompt("");
                         setPromptText("");
                         setPromptAnalysis(null);
                       }}
-                      title="Clear prompt text"
+                      title={isDemoAccount ? "Demo Version: Clearing prompt is locked" : "Clear prompt text"}
                     >
                       <Trash2 size={12} /> Clear
                     </button>
@@ -3838,7 +3998,24 @@ export default function App() {
                     >
                       <Command size={14} /> Parse and Ground Prompt
                     </button>
-                    <button className="btn-secondary" disabled={!pid || busy || !(promptNativeText || masterPrompt).trim()} onClick={analyzePromptSpecification}>Analyze Prompt</button>
+                    <button
+                      className="btn-secondary"
+                      disabled={isDemoAccount || !pid || busy || !(promptNativeText || masterPrompt).trim()}
+                      style={
+                        isDemoAccount
+                          ? {
+                              opacity: 0.38,
+                              cursor: "not-allowed",
+                              pointerEvents: "none",
+                              filter: "grayscale(25%)",
+                            }
+                          : undefined
+                      }
+                      title={isDemoAccount ? "Demo Version: Prompt analysis is pre-grounded" : undefined}
+                      onClick={analyzePromptSpecification}
+                    >
+                      Analyze Prompt
+                    </button>
                   </div>
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -5311,10 +5488,24 @@ export default function App() {
                 </div>
                 <button
                   className="btn-primary-blue"
-                  disabled={!pid}
+                  disabled={!pid || isDemoAccount}
+                  style={
+                    isDemoAccount
+                      ? {
+                          opacity: 0.38,
+                          cursor: "not-allowed",
+                          pointerEvents: "none",
+                          filter: "grayscale(25%)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }
+                      : undefined
+                  }
+                  title={isDemoAccount ? "Demo Version: Source is pre-configured and locked" : undefined}
                   onClick={() => setNewSourceModalOpen(true)}
                 >
-                  <Plus size={16} />
+                  {isDemoAccount ? <Lock size={14} /> : <Plus size={16} />}
                   Add Source
                 </button>
               </div>
@@ -5428,7 +5619,22 @@ export default function App() {
                                   <PlugZap size={14} />
                                   Test Connection
                                 </button>
-                                <SourceConnectorControl projectId={pid} source={s} onlyButton />
+                                <div
+                                  style={
+                                    isDemoAccount
+                                      ? {
+                                          opacity: 0.38,
+                                          pointerEvents: "none",
+                                          cursor: "not-allowed",
+                                          display: "inline-flex",
+                                          filter: "grayscale(25%)",
+                                        }
+                                      : { display: "inline-flex" }
+                                  }
+                                  title={isDemoAccount ? "Demo Version: Connector Agent runtime is pre-connected and locked" : undefined}
+                                >
+                                  <SourceConnectorControl projectId={pid} source={s} onlyButton />
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -5445,10 +5651,23 @@ export default function App() {
                     <p>Add a SQL Server, PostgreSQL, MySQL, or Oracle source to begin discovery.</p>
                     <button
                       className="btn-primary-blue"
-                      disabled={!pid}
+                      disabled={!pid || isDemoAccount}
+                      style={
+                        isDemoAccount
+                          ? {
+                              opacity: 0.38,
+                              cursor: "not-allowed",
+                              pointerEvents: "none",
+                              filter: "grayscale(25%)",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }
+                          : undefined
+                      }
                       onClick={() => setNewSourceModalOpen(true)}
                     >
-                      <Plus size={15} /> Add Source
+                      {isDemoAccount ? <Lock size={14} /> : <Plus size={15} />} Add Source
                     </button>
                   </div>
                 )}
@@ -5906,10 +6125,24 @@ export default function App() {
                   </button>
                   <button
                     className="btn-secondary"
+                    disabled={isDemoAccount}
                     onClick={() => setPage("Sources")}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                    style={
+                      isDemoAccount
+                        ? {
+                            opacity: 0.38,
+                            cursor: "not-allowed",
+                            pointerEvents: "none",
+                            filter: "grayscale(25%)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }
+                        : { display: "inline-flex", alignItems: "center", gap: 6 }
+                    }
+                    title={isDemoAccount ? "Demo Version: Source management is locked" : undefined}
                   >
-                    <Plus size={14} />
+                    {isDemoAccount ? <Lock size={14} /> : <Plus size={14} />}
                     Manage Sources
                   </button>
                 </div>
@@ -5935,14 +6168,14 @@ export default function App() {
                           </div>
                           <span className="discovery-status-chip">
                             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
-                            Connected (14ms)
+                            {isDemoAccount ? "Connected (12ms · Demo Mock)" : "Connected (14ms)"}
                           </span>
                         </div>
 
                         {/* Scope preview pill row */}
                         <div className="discovery-scope-row">
                           <span className="discovery-scope-item">
-                            <b>{sourceInventoryCount}</b> Tables
+                            <b>{isDemoAccount ? (inventory.length || 6) : sourceInventoryCount}</b> Tables
                           </span>
                           <span className="discovery-scope-dot">•</span>
                           <span className="discovery-scope-item">
@@ -5954,7 +6187,7 @@ export default function App() {
                           </span>
                           <span className="discovery-scope-dot">•</span>
                           <span className="discovery-scope-item">
-                            <b>4.2 GB</b> Est.
+                            <b>{isDemoAccount ? "1.8 GB" : "4.2 GB"}</b> Est.
                           </span>
                         </div>
 
@@ -5991,8 +6224,18 @@ export default function App() {
                           </button>
                           <button
                             className="btn-secondary"
-                            disabled={busy || isScanning}
-                            title="Test live connection handshake"
+                            disabled={busy || isScanning || isDemoAccount}
+                            style={
+                              isDemoAccount
+                                ? {
+                                    opacity: 0.38,
+                                    cursor: "not-allowed",
+                                    pointerEvents: "none",
+                                    filter: "grayscale(25%)",
+                                  }
+                                : undefined
+                            }
+                            title={isDemoAccount ? "Demo Version: Connection handshake verified" : "Test live connection handshake"}
                             onClick={() =>
                               action(async () => {
                                 const r: any = await api(`/projects/${pid}/sources/${s.id}/test`, { method: "POST" });
@@ -6039,14 +6282,14 @@ export default function App() {
                       <div className="discovery-step-num">{discoveryProgressStep > 2 ? "✓" : "2"}</div>
                       <div className="discovery-step-info">
                         <span>2. Information Schema</span>
-                        <small>11 tables extracted</small>
+                        <small>{isDemoAccount ? "6 tables extracted" : "11 tables extracted"}</small>
                       </div>
                     </div>
                     <div className={`discovery-step-item ${discoveryProgressStep > 3 ? "is-done" : discoveryProgressStep === 3 ? "is-current" : ""}`}>
                       <div className="discovery-step-num">{discoveryProgressStep > 3 ? "✓" : "3"}</div>
                       <div className="discovery-step-info">
                         <span>3. Keys & Relations</span>
-                        <small>14 constraints parsed</small>
+                        <small>{isDemoAccount ? "9 constraints parsed" : "14 constraints parsed"}</small>
                       </div>
                     </div>
                     <div className={`discovery-step-item ${discoveryProgressStep === 4 ? "is-done" : ""}`}>
@@ -6127,6 +6370,18 @@ export default function App() {
                   <div className="discovery-toolbar-right">
                     <button
                       className="btn-secondary"
+                      disabled={isDemoAccount}
+                      style={
+                        isDemoAccount
+                          ? {
+                              opacity: 0.38,
+                              cursor: "not-allowed",
+                              pointerEvents: "none",
+                              filter: "grayscale(25%)",
+                            }
+                          : undefined
+                      }
+                      title={isDemoAccount ? "Demo Version: Export manifest is locked" : undefined}
                       onClick={() => {
                         const manifest = {
                           project_id: pid,
@@ -6149,6 +6404,18 @@ export default function App() {
                     </button>
                     <button
                       className="btn-secondary"
+                      disabled={isDemoAccount}
+                      style={
+                        isDemoAccount
+                          ? {
+                              opacity: 0.38,
+                              cursor: "not-allowed",
+                              pointerEvents: "none",
+                              filter: "grayscale(25%)",
+                            }
+                          : undefined
+                      }
+                      title={isDemoAccount ? "Demo Version: Raw diagnostic is locked" : undefined}
                       onClick={() => setShowRawJson(!showRawJson)}
                     >
                       <FileCode2 size={14} />
@@ -6156,9 +6423,9 @@ export default function App() {
                     </button>
                     <button
                       className="btn-primary-blue"
-                      onClick={() => setPage("Inventory")}
+                      onClick={() => setPage(isDemoAccount ? "Migration Workflow" : "Inventory")}
                     >
-                      Proceed to Inventory {inventorySelectedIds.length > 0 ? `(${inventorySelectedIds.length} Objects)` : `(${inventory.length} Objects)`}
+                      {isDemoAccount ? "Proceed to Migration Studio →" : `Proceed to Inventory ${inventorySelectedIds.length > 0 ? `(${inventorySelectedIds.length} Objects)` : `(${inventory.length} Objects)`}`}
                       <ArrowRight size={14} />
                     </button>
                   </div>
@@ -7645,15 +7912,37 @@ export default function App() {
                         <option value="FAILED">Failed</option>
                       </select>
                       <button
-                        disabled={!medLogs.length && !logView.length}
+                        disabled={isDemoAccount || (!medLogs.length && !logView.length)}
                         onClick={copyMedallionLogs}
+                        style={
+                          isDemoAccount
+                            ? {
+                                opacity: 0.38,
+                                cursor: "not-allowed",
+                                pointerEvents: "none",
+                                filter: "grayscale(25%)",
+                              }
+                            : undefined
+                        }
+                        title={isDemoAccount ? "Demo Version: Copy logs is locked" : undefined}
                       >
                         <ScrollText size={14} />
                         Copy Logs
                       </button>
                       <button
-                        disabled={!pid || busy}
+                        disabled={isDemoAccount || !pid || busy}
                         onClick={medDeployment.run_id ? downloadMedallionLogs : downloadDevLogs}
+                        style={
+                          isDemoAccount
+                            ? {
+                                opacity: 0.38,
+                                cursor: "not-allowed",
+                                pointerEvents: "none",
+                                filter: "grayscale(25%)",
+                              }
+                            : undefined
+                        }
+                        title={isDemoAccount ? "Demo Version: Download CSV is locked" : undefined}
                       >
                         <Download size={14} />
                         Download CSV
@@ -9179,21 +9468,47 @@ export default function App() {
                           <option value="FAILED">Failed only</option>
                         </select>
                         <button
-                          disabled={!(Array.isArray(medLogs) && medLogs.length > 0) && !(Array.isArray(logView) && logView.length > 0)}
+                          disabled={isDemoAccount || (!(Array.isArray(medLogs) && medLogs.length > 0) && !(Array.isArray(logView) && logView.length > 0))}
                           onClick={copyMedallionLogs}
-                          style={{ display: "flex", alignItems: "center", gap: 5 }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                            ...(isDemoAccount
+                              ? {
+                                  opacity: 0.38,
+                                  cursor: "not-allowed",
+                                  pointerEvents: "none",
+                                  filter: "grayscale(25%)",
+                                }
+                              : {}),
+                          }}
+                          title={isDemoAccount ? "Demo Version: Copy logs is locked" : undefined}
                         >
                           <ScrollText size={14} /> Copy Logs
                         </button>
                         <button
-                          disabled={!pid || busy}
+                          disabled={isDemoAccount || !pid || busy}
                           onClick={medDeployment?.run_id ? downloadMedallionLogs : downloadDevLogs}
-                          style={{ display: "flex", alignItems: "center", gap: 5 }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                            ...(isDemoAccount
+                              ? {
+                                  opacity: 0.38,
+                                  cursor: "not-allowed",
+                                  pointerEvents: "none",
+                                  filter: "grayscale(25%)",
+                                }
+                              : {}),
+                          }}
+                          title={isDemoAccount ? "Demo Version: Download CSV is locked" : undefined}
                         >
                           <Download size={14} /> Download CSV
                         </button>
                         <button
-                          disabled={!pid || busy}
+                          disabled={isDemoAccount || !pid || busy}
                           onClick={async () => {
                             setBusy(true);
                             try {
@@ -9209,8 +9524,20 @@ export default function App() {
                               setBusy(false);
                             }
                           }}
-                          title="Refresh deployment status and execution logs"
-                          style={{ display: "flex", alignItems: "center", gap: 5 }}
+                          title={isDemoAccount ? "Demo Version: Refresh logs is locked" : "Refresh deployment status and execution logs"}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                            ...(isDemoAccount
+                              ? {
+                                  opacity: 0.38,
+                                  cursor: "not-allowed",
+                                  pointerEvents: "none",
+                                  filter: "grayscale(25%)",
+                                }
+                              : {}),
+                          }}
                         >
                           <RefreshCw size={14} className={busy ? "spinning" : ""} /> Refresh Logs
                         </button>
@@ -9355,14 +9682,29 @@ export default function App() {
                   </Panel>
 
                   <Panel
-                title="Scheduled Incremental Data Refresh (Delta Sync)"
+                title={isDemoAccount ? "Scheduled Incremental Data Refresh (Delta Sync) (Demo · Locked 🔒)" : "Scheduled Incremental Data Refresh (Delta Sync)"}
                 actions={
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <button
                       className="primary-action"
-                      disabled={!pid || busy || scheduleSyncing}
+                      disabled={isDemoAccount || !pid || busy || scheduleSyncing}
                       onClick={triggerScheduleNow}
-                      style={{ background: "#2563eb", color: "#fff", display: "flex", alignItems: "center", gap: 6 }}
+                      style={{
+                        background: "#2563eb",
+                        color: "#fff",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        ...(isDemoAccount
+                          ? {
+                              opacity: 0.38,
+                              cursor: "not-allowed",
+                              pointerEvents: "none",
+                              filter: "grayscale(25%)",
+                            }
+                          : {}),
+                      }}
+                      title={isDemoAccount ? "Demo Version: Incremental sync is locked" : undefined}
                     >
                       <RefreshCw size={14} className={scheduleSyncing ? "spinning" : ""} />
                       {scheduleSyncing ? "Syncing Delta Records..." : "Run Incremental Sync Now"}
@@ -9370,7 +9712,44 @@ export default function App() {
                   </div>
                 }
               >
-                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {isDemoAccount && (
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "12px 18px",
+                    background: "linear-gradient(135deg, rgba(15, 23, 42, 0.92) 0%, rgba(30, 41, 59, 0.92) 100%)",
+                    borderRadius: 8,
+                    color: "#e2e8f0",
+                    marginBottom: 16,
+                    border: "1px solid rgba(56, 189, 248, 0.35)",
+                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)"
+                  }}>
+                    <div style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: "50%",
+                      background: "rgba(56, 189, 248, 0.15)",
+                      border: "1px solid rgba(56, 189, 248, 0.4)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#38bdf8",
+                      flexShrink: 0
+                    }}>
+                      <Lock size={18} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#f8fafc", display: "flex", alignItems: "center", gap: 6 }}>
+                        Automated Delta Sync Locked <span style={{ fontSize: 10, background: "rgba(56, 189, 248, 0.2)", color: "#7dd3fc", padding: "1px 6px", borderRadius: 4 }}>Demo Version</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>
+                        High-watermark incremental sync and automated schedules are managed in production. Feature locked for demo session.
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className={isDemoAccount ? "demo-faded-content" : ""} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                   {/* Status Banner */}
                   <div style={{
                     display: "flex",
@@ -10453,7 +10832,18 @@ export default function App() {
                     <button
                       type="button"
                       className="deploy-action-btn"
-                      title="Copy deployment logs as JSON"
+                      title={isDemoAccount ? "Demo Version: Copy logs is locked" : "Copy deployment logs as JSON"}
+                      disabled={isDemoAccount}
+                      style={
+                        isDemoAccount
+                          ? {
+                              opacity: 0.38,
+                              cursor: "not-allowed",
+                              pointerEvents: "none",
+                              filter: "grayscale(25%)",
+                            }
+                          : undefined
+                      }
                       onClick={() => {
                         const exportData = attemptItems.length > 0 ? attemptItems : (medLogs.length > 0 ? medLogs : logView);
                         if (exportData.length > 0) {
@@ -10470,8 +10860,8 @@ export default function App() {
                     <button
                       type="button"
                       className="deploy-action-btn"
-                      title="Export logs as CSV"
-                      disabled={!pid || busy}
+                      title={isDemoAccount ? "Demo Version: Export logs is locked" : "Export logs as CSV"}
+                      disabled={isDemoAccount || !pid || busy}
                       onClick={() => {
                         if (medDeployment?.run_id) {
                           downloadMedallionLogs();
@@ -10481,6 +10871,16 @@ export default function App() {
                           downloadDevLogs();
                         }
                       }}
+                      style={
+                        isDemoAccount
+                          ? {
+                              opacity: 0.38,
+                              cursor: "not-allowed",
+                              pointerEvents: "none",
+                              filter: "grayscale(25%)",
+                            }
+                          : undefined
+                      }
                     >
                       <Download size={13} /> Export
                     </button>
@@ -10793,7 +11193,18 @@ export default function App() {
                       <button
                         type="button"
                         className="deploy-terminal-btn"
-                        title="Copy terminal logs"
+                        title={isDemoAccount ? "Demo Version: Copy terminal logs is locked" : "Copy terminal logs"}
+                        disabled={isDemoAccount}
+                        style={
+                          isDemoAccount
+                            ? {
+                                opacity: 0.38,
+                                cursor: "not-allowed",
+                                pointerEvents: "none",
+                                filter: "grayscale(25%)",
+                              }
+                            : undefined
+                        }
                         onClick={() => {
                           const text = terminalLines.map((l: any) => `${l.time} [${l.level}]  ${l.msg}`).join("\n");
                           navigator.clipboard.writeText(text);
@@ -10805,8 +11216,18 @@ export default function App() {
                       <button
                         type="button"
                         className="deploy-terminal-btn"
-                        title="Download full DEV logs"
-                        disabled={!pid || busy}
+                        title={isDemoAccount ? "Demo Version: Pop-out logs is locked" : "Download full DEV logs"}
+                        disabled={isDemoAccount || !pid || busy}
+                        style={
+                          isDemoAccount
+                            ? {
+                                opacity: 0.38,
+                                cursor: "not-allowed",
+                                pointerEvents: "none",
+                                filter: "grayscale(25%)",
+                              }
+                            : undefined
+                        }
                         onClick={downloadDevLogs}
                       >
                         <Download size={12} /> Pop-out
@@ -10935,15 +11356,53 @@ export default function App() {
                   <span style={{ color: "#0284c7" }}>Databricks Control Plane & Target Infrastructure</span>
                 </div>
                 <div className="wf-header-badges">
-                  <span className="wf-header-badge emerald">
-                    <CheckCircle2 size={13} /> {environmentConfig?.configured ? "Control Plane: Ready" : "Setup Required"}
-                  </span>
-                  <span className="wf-header-badge blue">
-                    <ServerCog size={13} /> Unity Catalog
-                  </span>
+                  {isDemoAccount ? (
+                    <>
+                      <span className="wf-header-badge emerald">
+                        <Lock size={13} /> Demo Version: Managed Target
+                      </span>
+                      <span className="wf-header-badge blue">
+                        <ServerCog size={13} /> Unity Catalog (Pre-Configured)
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="wf-header-badge emerald">
+                        <CheckCircle2 size={13} /> {environmentConfig?.configured ? "Control Plane: Ready" : "Setup Required"}
+                      </span>
+                      <span className="wf-header-badge blue">
+                        <ServerCog size={13} /> Unity Catalog
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
 
+              {/* Demo Version Locked Overlay Banner & Action */}
+              {isDemoAccount && (
+                <div className="demo-locked-env-wrapper">
+                  <div className="demo-locked-overlay-card">
+                    <div className="demo-locked-icon-badge">
+                      <Lock size={26} />
+                    </div>
+                    <span className="demo-version-tag">Demo Version · Target Pre-Provisioned</span>
+                    <div className="demo-locked-title">Databricks Target &amp; Unity Catalog Locked</div>
+                    <p className="demo-locked-desc">
+                      For this demo session, the Databricks target control plane, Unity Catalog permissions, and Medallion schemas are pre-configured. Direct infrastructure modification is locked for seamless demo presentation.
+                    </p>
+                    <button
+                      className="demo-locked-bypass-btn"
+                      onClick={() => setPage("Sources")}
+                      title="Bypass Environment Setup directly to Sources"
+                    >
+                      Bypass to Sources (Stage 3) <ArrowRight size={15} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Cards Container (faded when demo account) */}
+              <div className={isDemoAccount ? "demo-faded-content" : ""} style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               {/* Card 1: Configuration Card & Inputs */}
               <div className="card" style={{ padding: "24px 26px" }}>
                 <div className="env-section-tag">
@@ -11360,6 +11819,7 @@ export default function App() {
                   </>
                 )}
               </div>
+              </div>
             </div>
           )}
           {page === "Administration" && (
@@ -11440,14 +11900,16 @@ export default function App() {
               backText: "",
               backTarget: "",
               backDisabled: true,
-              forwardText: "Continue with Selected Project →",
-              forwardTarget: "Environment Setup",
+              forwardText: isDemoAccount ? "Proceed to Sources (Demo Bypassed) →" : "Continue with Selected Project →",
+              forwardTarget: isDemoAccount ? "Sources" : "Environment Setup",
               forwardDisabled: !pid,
               forwardTooltip: !pid ? "Select a project to continue" : undefined,
             },
             2: {
-              title: "Stage 2 of 9: Environment Setup",
-              context: environmentConfig?.status === "READY" ? "Databricks target connection tested" : "Databricks target setup required",
+              title: isDemoAccount ? "Stage 2 of 9: Environment Setup (Demo · Locked)" : "Stage 2 of 9: Environment Setup",
+              context: isDemoAccount
+                ? "Databricks target pre-provisioned for demo (Locked)"
+                : environmentConfig?.status === "READY" ? "Databricks target connection tested" : "Databricks target setup required",
               backText: "← Back to Projects",
               backTarget: "Projects",
               backDisabled: false,
@@ -11458,8 +11920,8 @@ export default function App() {
             3: {
               title: "Stage 3 of 9: Sources",
               context: `${sources.length} Database Sources Configured`,
-              backText: "← Back to Environment",
-              backTarget: "Environment Setup",
+              backText: isDemoAccount ? "← Back to Projects" : "← Back to Environment",
+              backTarget: isDemoAccount ? "Projects" : "Environment Setup",
               backDisabled: false,
               forwardText: "Proceed to Discovery →",
               forwardTarget: "Discovery",
@@ -11467,29 +11929,39 @@ export default function App() {
             },
             4: {
               title: "Stage 4 of 9: Discovery",
-              context: `${(inventorySelectedIds.length > 0 ? inventorySelectedIds.length : inventory.length) || dash.objects_discovered || 8} Objects Identified`,
+              context: isDemoAccount
+                ? `${(inventorySelectedIds.length > 0 ? inventorySelectedIds.length : inventory.length) || dash.objects_discovered || 8} Objects · Demo Bypass to Studio Active`
+                : `${(inventorySelectedIds.length > 0 ? inventorySelectedIds.length : inventory.length) || dash.objects_discovered || 8} Objects Identified`,
               backText: "← Back to Sources",
               backTarget: "Sources",
               backDisabled: false,
-              forwardText: `Proceed to Inventory (${(inventorySelectedIds.length > 0 ? inventorySelectedIds.length : inventory.length) || dash.objects_discovered || 8} Objects) →`,
-              forwardTarget: "Inventory",
+              forwardText: isDemoAccount
+                ? "Proceed to Migration Studio (Demo Bypassed) →"
+                : `Proceed to Inventory (${(inventorySelectedIds.length > 0 ? inventorySelectedIds.length : inventory.length) || dash.objects_discovered || 8} Objects) →`,
+              forwardTarget: isDemoAccount ? "Migration Workflow" : "Inventory",
               forwardDisabled: false,
             },
             5: {
-              title: "Stage 5 of 9: Inventory",
-              context: `${(inventorySelectedIds.length > 0 ? inventorySelectedIds.length : inventory.length) || 8} Source Objects Cataloged`,
+              title: isDemoAccount ? "Stage 5 of 9: Inventory (Demo Bypassed)" : "Stage 5 of 9: Inventory",
+              context: isDemoAccount
+                ? "Bypassed in Demo · Proceed to Studio"
+                : `${(inventorySelectedIds.length > 0 ? inventorySelectedIds.length : inventory.length) || 8} Source Objects Cataloged`,
               backText: "← Back to Discovery",
               backTarget: "Discovery",
               backDisabled: false,
-              forwardText: `Proceed to Classification (${(inventorySelectedIds.length > 0 ? inventorySelectedIds.length : inventory.length) || 8} Objects) →`,
-              forwardTarget: "Layer Classification",
+              forwardText: isDemoAccount
+                ? "Proceed to Migration Studio →"
+                : `Proceed to Classification (${(inventorySelectedIds.length > 0 ? inventorySelectedIds.length : inventory.length) || 8} Objects) →`,
+              forwardTarget: isDemoAccount ? "Migration Workflow" : "Layer Classification",
               forwardDisabled: false,
             },
             6: {
-              title: "Stage 6 of 9: Layer Classification",
-              context: "Medallion Architecture Layer Assignment",
-              backText: "← Back to Inventory",
-              backTarget: "Inventory",
+              title: isDemoAccount ? "Stage 6 of 9: Layer Classification (Demo Bypassed)" : "Stage 6 of 9: Layer Classification",
+              context: isDemoAccount
+                ? "Bypassed in Demo · Proceed to Studio"
+                : "Medallion Architecture Layer Assignment",
+              backText: isDemoAccount ? "← Back to Discovery" : "← Back to Inventory",
+              backTarget: isDemoAccount ? "Discovery" : "Inventory",
               backDisabled: false,
               forwardText: "Approve & Proceed to Studio →",
               forwardTarget: "Migration Workflow",
@@ -11498,8 +11970,8 @@ export default function App() {
             7: {
               title: "Stage 7 of 9: Migration Studio",
               context: `${medArts.length || 14} Medallion Artifacts · ${medArts.filter((a: any) => a.review_status === "APPROVED").length} Approved`,
-              backText: "← Back to Classification",
-              backTarget: "Layer Classification",
+              backText: isDemoAccount ? "← Back to Discovery" : "← Back to Classification",
+              backTarget: isDemoAccount ? "Discovery" : "Layer Classification",
               backDisabled: false,
               forwardText: `Proceed to Deployment (${medArts.length || 14} Artifacts) →`,
               forwardTarget: "Deployments",
@@ -11768,7 +12240,13 @@ export default function App() {
                       <div style={{ gridColumn: "span 2" }}><span style={{ color: "#64748b" }}>Catalogs:</span> <b style={{ color: "#93c5fd" }}>{autoPromotionStatus?.preflight?.dev_catalog || "Not available"} → {autoPromotionStatus?.preflight?.test_catalog || "Not available"} → {autoPromotionStatus?.preflight?.uat_catalog || "Not available"} → {autoPromotionStatus?.preflight?.prod_catalog || "Not available"}</b></div>
                     </div>
 
-                    <p role="status">{autoAuthLoading ? "Checking the current release and prerequisites…" : autoPromotionStatus?.preflight?.eligible ? "Current release is eligible for authorization." : "Authorization blocked. Complete measured DEV reconciliation and resolve the listed prerequisites."}</p>
+                    <p role="status" style={{ fontSize: 12, color: isDemoAccount || autoPromotionStatus?.preflight?.eligible ? "#38bdf8" : "#f87171", margin: "0 0 12px 0" }}>
+                      {autoAuthLoading
+                        ? "Checking the current release and prerequisites…"
+                        : (isDemoAccount || autoPromotionStatus?.preflight?.eligible)
+                        ? "Current release is eligible for authorization."
+                        : "Authorization blocked. Complete measured DEV reconciliation and resolve the listed prerequisites."}
+                    </p>
                     <div style={{ marginBottom: 16 }}>
                       <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#cbd5e1", marginBottom: 6 }}>
                         Confirmation Required: Type <code>PROMOTE TO PROD</code>
@@ -11801,8 +12279,21 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        disabled={autoAuthText.trim() !== "PROMOTE TO PROD" || autoRunning || autoAuthLoading || !autoPromotionStatus?.preflight?.eligible}
-                        onClick={() => { setShowAutoAuthModal(false); authorizeAutomatedPromotion(); }}
+                        disabled={
+                          autoAuthText.trim() !== "PROMOTE TO PROD" ||
+                          autoRunning ||
+                          autoAuthLoading ||
+                          (!isDemoAccount && !autoPromotionStatus?.preflight?.eligible)
+                        }
+                        onClick={() => {
+                          setShowAutoAuthModal(false);
+                          if (isDemoAccount) {
+                            setShowDemoSalesModal(true);
+                            setMsg("Demo Version: Automated promotion to PROD is restricted. Contact contactsales@vtabsquare.com for enterprise access.");
+                            return;
+                          }
+                          authorizeAutomatedPromotion();
+                        }}
                         style={{
                           padding: "8px 18px",
                           background: autoAuthText.trim() === "PROMOTE TO PROD" ? "linear-gradient(135deg, #2563eb, #1d4ed8)" : "#334155",
@@ -11815,6 +12306,87 @@ export default function App() {
                       >
                         {autoRunning ? "Starting Automated Promotion..." : "Authorize & Execute Full Chain"}
                       </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Demo Version Sales & Contact Modal */}
+              {showDemoSalesModal && (
+                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, backdropFilter: "blur(6px)" }}>
+                  <div style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 16, padding: "28px 28px 24px 28px", maxWidth: 540, width: "90%", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.85)", textAlign: "center", position: "relative" }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowDemoSalesModal(false)}
+                      style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 18 }}
+                      title="Close"
+                    >
+                      ✕
+                    </button>
+
+                    {/* Icon Badge */}
+                    <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 56, height: 56, borderRadius: "50%", background: "linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(99, 102, 241, 0.2))", border: "1px solid rgba(99, 102, 241, 0.4)", marginBottom: 16 }}>
+                      <Lock size={26} color="#60a5fa" />
+                    </div>
+
+                    {/* Pill Badge */}
+                    <div style={{ marginBottom: 12 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", background: "rgba(56, 189, 248, 0.15)", color: "#38bdf8", border: "1px solid rgba(56, 189, 248, 0.3)", padding: "3px 10px", borderRadius: 999 }}>
+                        Demo Version Restricted
+                      </span>
+                    </div>
+
+                    {/* Title */}
+                    <h3 style={{ margin: "0 0 10px 0", fontSize: 20, fontWeight: 700, color: "#f8fafc" }}>
+                      Automated Promotion to PROD
+                    </h3>
+
+                    {/* Description */}
+                    <p style={{ color: "#94a3b8", fontSize: 13.5, lineHeight: 1.6, margin: "0 0 20px 0" }}>
+                      This automated end-to-end promotion chain across <b>TEST</b>, <b>UAT</b>, and <b>PROD</b> with Databricks Deep Clone and cross-catalog replication is restricted in the <b>Demo Version</b>.
+                    </p>
+
+                    {/* Contact Sales Card */}
+                    <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 10, padding: "16px 18px", marginBottom: 22, textAlign: "left" }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#cbd5e1", marginBottom: 8 }}>
+                        Contact for full enterprise deployment &amp; production rollout:
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#020617", border: "1px solid #475569", borderRadius: 8, padding: "10px 14px", gap: 10 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, overflow: "hidden" }}>
+                          <Mail size={16} color="#38bdf8" style={{ flexShrink: 0 }} />
+                          <span style={{ color: "#f1f5f9", fontWeight: 600, fontSize: 13.5, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            contactsales@vtabsquare.com
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText("contactsales@vtabsquare.com");
+                            setMsg("Copied contactsales@vtabsquare.com to clipboard");
+                          }}
+                          style={{ background: "#334155", border: "none", borderRadius: 6, color: "#93c5fd", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                          title="Copy email to clipboard"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowDemoSalesModal(false)}
+                        style={{ padding: "9px 20px", background: "#1e293b", border: "1px solid #475569", borderRadius: 8, color: "#cbd5e1", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                      >
+                        Close
+                      </button>
+                      <a
+                        href="mailto:contactsales@vtabsquare.com?subject=Migration%20Factory%20-%20PROD%20Promotion%20Enterprise%20Inquiry"
+                        style={{ padding: "9px 20px", background: "linear-gradient(135deg, #2563eb, #1d4ed8)", border: "none", borderRadius: 8, color: "#ffffff", fontSize: 13, fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8 }}
+                      >
+                        <Mail size={14} /> Contact Sales
+                      </a>
                     </div>
                   </div>
                 </div>

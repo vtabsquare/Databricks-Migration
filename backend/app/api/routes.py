@@ -727,13 +727,24 @@ def prompt_migration_latest(project_id:str,db:Session=Depends(get_db),_=Depends(
 @router.post("/projects/{project_id}/prompt-specifications")
 def prompt_specification_submit(project_id:str,data:PromptSpecificationIn,db:Session=Depends(get_db),user=Depends(auth)):
     actor=_admin_actor(user)
+    from app.services.demo_mock import is_demo_user, submit_demo_prompt_specification
+    if is_demo_user(user.get("sub")):
+        try:
+            return submit_demo_prompt_specification(db, project_id, data.prompt, actor)
+        except Exception as e:
+            _environment_error(e)
     try: return prompt_specification.submit(db,project_id,data.prompt,actor,data.source_id,object_ids=data.object_ids)
     except Exception as e: _environment_error(e)
 
 
 @router.get("/projects/{project_id}/prompt-specifications/latest")
-def prompt_specification_latest(project_id:str,db:Session=Depends(get_db),_=Depends(auth)):
-    try: return prompt_specification.latest(db,project_id)
+def prompt_specification_latest(project_id:str,db:Session=Depends(get_db),user=Depends(auth)):
+    try:
+        res = prompt_specification.latest(db,project_id)
+        from app.services.demo_mock import is_demo_user, get_demo_prompt_specification_detail
+        if is_demo_user(user.get("sub")) and res and res.get("id"):
+            return get_demo_prompt_specification_detail(db, project_id, res["id"])
+        return res
     except Exception as e: _environment_error(e)
 
 
@@ -786,7 +797,10 @@ def refine_plan_api(project_id: str, specification_id: str, data: PlanRefineIn, 
 
 
 @router.get("/projects/{project_id}/prompt-specifications/{specification_id}")
-def prompt_specification_get(project_id:str,specification_id:str,db:Session=Depends(get_db),_=Depends(auth)):
+def prompt_specification_get(project_id:str,specification_id:str,db:Session=Depends(get_db),user=Depends(auth)):
+    from app.services.demo_mock import is_demo_user, get_demo_prompt_specification_detail
+    if is_demo_user(user.get("sub")):
+        return get_demo_prompt_specification_detail(db, project_id, specification_id)
     try: return prompt_specification.detail(db,project_id,specification_id)
     except Exception as e: _environment_error(e)
 
@@ -822,6 +836,9 @@ def prompt_specification_generate(project_id:str,specification_id:str,db:Session
 @router.post("/projects/{project_id}/prompt-specifications/{specification_id}/validate")
 def prompt_specification_validate(project_id:str,specification_id:str,db:Session=Depends(get_db),user=Depends(auth)):
     _admin_actor(user)
+    from app.services.demo_mock import is_demo_user, validate_demo_target
+    if is_demo_user(user.get("sub")):
+        return validate_demo_target(db, project_id, specification_id)
     try: return prompt_specification.validate_target(db,project_id,specification_id)
     except Exception as e: _environment_error(e)
 
@@ -836,8 +853,19 @@ def prompt_specification_review_artifact(project_id:str,specification_id:str,art
 @router.post("/projects/{project_id}/prompt-specifications/{specification_id}/deploy-dev")
 def prompt_specification_deploy_dev(project_id:str,specification_id:str,db:Session=Depends(get_db),user=Depends(auth)):
     actor=_admin_actor(user)
+    from app.services.demo_mock import is_demo_user, deploy_demo_dev
+    if is_demo_user(user.get("sub")):
+        return deploy_demo_dev(db, project_id, specification_id, actor)
     try: return prompt_specification.deploy_dev(db,project_id,specification_id,actor)
     except Exception as e: _environment_error(e)
+
+
+@router.post("/projects/{project_id}/demo/reset-studio")
+def demo_reset_studio_api(project_id: str, db: Session = Depends(get_db), user = Depends(auth)):
+    from app.services.demo_mock import is_demo_user, reset_demo_project_studio
+    if not is_demo_user(user.get("sub")):
+        raise HTTPException(403, "Reset Demo Studio is only available in demo presentation mode")
+    return reset_demo_project_studio(db, project_id)
 
 
 @router.get("/projects/{project_id}/prompt-specifications/{specification_id}/trace")
@@ -906,9 +934,21 @@ def master_migration_latest(project_id:str,db:Session=Depends(get_db),_=Depends(
 
 @router.get("/projects/{project_id}/master-orchestration/current")
 @router.get("/projects/{project_id}/automated-promotion/current")
-def automated_promotion_current(project_id: str, db: Session = Depends(get_db), _=Depends(auth)):
+def automated_promotion_current(project_id: str, db: Session = Depends(get_db), user=Depends(auth)):
     try:
-        return master_orchestration.get_automated_promotion_status(db, project_id)
+        from app.services.demo_mock import is_demo_user
+        res = master_orchestration.get_automated_promotion_status(db, project_id)
+        if is_demo_user(user.get("sub")) and res:
+            if not res.get("preflight"):
+                res["preflight"] = {}
+            res["preflight"]["eligible"] = True
+            res["preflight"]["blockers"] = []
+            res["preflight"]["artifact_count"] = 20
+            res["preflight"]["dev_catalog"] = "logistics_demo_dev"
+            res["preflight"]["test_catalog"] = "logistics_demo_test"
+            res["preflight"]["uat_catalog"] = "logistics_demo_uat"
+            res["preflight"]["prod_catalog"] = "logistics_demo_prod"
+        return res
     except Exception as e:
         _environment_error(e)
 
@@ -922,6 +962,12 @@ def automated_promotion_authorize(
     user=Depends(auth),
 ):
     actor = _admin_actor(user)
+    from app.services.demo_mock import is_demo_user
+    if is_demo_user(user.get("sub")):
+        raise HTTPException(
+            status_code=403,
+            detail="Demo Version: Automated promotion to PROD is restricted in Demo mode. Contact contactsales@vtabsquare.com for enterprise access.",
+        )
     try:
         return master_orchestration.authorize_automated_promotion(
             db, project_id, confirmation_text=data.confirmation_text, actor=actor
@@ -983,16 +1029,24 @@ def automated_promotion_cancel(
 
 
 @router.get("/projects/{project_id}/sources")
-def sources_list(project_id:str,db:Session=Depends(get_db),_=Depends(auth)):
+def sources_list(project_id:str,db:Session=Depends(get_db),current_user=Depends(auth)):
+    from app.services.demo_mock import is_demo_user, get_demo_connector_info
     rows=db.scalars(select(MigrationSource).where(MigrationSource.project_id==project_id).order_by(MigrationSource.profile_name)).all()
+    if is_demo_user(current_user.get("sub")):
+        return [{"id":x.id,"profile_name":x.profile_name,"server_name":x.server_name,"database_name":x.database_name,
+                 "engine":x.engine or "SQLSERVER","port":x.port,"schema_name":x.schema_name,"username":x.username,
+                 "connector": get_demo_connector_info(x.id)} for x in rows]
     return [{"id":x.id,"profile_name":x.profile_name,"server_name":x.server_name,"database_name":x.database_name,
              "engine":x.engine or "SQLSERVER","port":x.port,"schema_name":x.schema_name,"username":x.username,
              "connector": connector_info(x.id)} for x in rows]
 
 @router.post("/projects/{project_id}/sources/{source_id}/test")
-def source_test(project_id:str,source_id:str,db:Session=Depends(get_db),_=Depends(auth)):
+def source_test(project_id:str,source_id:str,db:Session=Depends(get_db),current_user=Depends(auth)):
     src=db.get(MigrationSource,source_id)
     if not src or src.project_id!=project_id: raise HTTPException(404,"Source not found in project")
+    from app.services.demo_mock import is_demo_user, get_demo_mock_test_result
+    if is_demo_user(current_user.get("sub")):
+        return get_demo_mock_test_result(src)
     try:
         conn_meta = connector_info(src.id)
         if conn_meta["mode"] == "CONNECTOR" and conn_meta["status"] == "ONLINE":
@@ -1011,9 +1065,19 @@ def source_test(project_id:str,source_id:str,db:Session=Depends(get_db),_=Depend
         raise HTTPException(400,f"Connection test failed: {e}")
 
 @router.post("/projects/{project_id}/discovery/live/{source_id}")
-def discovery_live(project_id:str,source_id:str,db:Session=Depends(get_db),_=Depends(auth)):
+def discovery_live(project_id:str,source_id:str,db:Session=Depends(get_db),current_user=Depends(auth)):
     src=db.get(MigrationSource,source_id)
     if not src or src.project_id!=project_id: raise HTTPException(404,"Source not found in project")
+    from app.services.demo_mock import is_demo_user, get_demo_mock_snapshot
+    if is_demo_user(current_user.get("sub")):
+        snap = get_demo_mock_snapshot(src.database_name or "LogisticsMiniDemo")
+        counts = ingest_snapshot(db, project_id, source_id, snap)
+        try:
+            classify_project(db, project_id)
+            create_mappings(db, project_id, "DEV", "hive_metastore")
+        except Exception:
+            pass
+        return {"counts": counts, "database": snap.get("database"), "objects": len(snap.get("objects", []))}
     try:
         conn_meta = connector_info(src.id)
         if conn_meta["mode"] == "CONNECTOR" and conn_meta["status"] == "ONLINE":
@@ -1225,7 +1289,20 @@ def discovery_snapshot(project_id:str,data:SnapshotIn,db:Session=Depends(get_db)
     except ValueError as e: raise HTTPException(400,str(e))
 
 @router.get("/projects/{project_id}/inventory")
-def inventory(project_id:str,offset:int=0,limit:int=100,object_type:str|None=None,db:Session=Depends(get_db),_=Depends(auth)):
+def inventory(project_id:str,offset:int=0,limit:int=100,object_type:str|None=None,db:Session=Depends(get_db),current_user=Depends(auth)):
+    from app.services.demo_mock import is_demo_user, get_demo_mock_snapshot
+    if is_demo_user(current_user.get("sub")):
+        existing_count = db.scalar(select(func.count(MigrationObject.id)).where(MigrationObject.project_id==project_id))
+        if existing_count == 0:
+            src = db.scalar(select(MigrationSource).where(MigrationSource.project_id==project_id))
+            if src:
+                snap = get_demo_mock_snapshot(src.database_name or "LogisticsMiniDemo")
+                ingest_snapshot(db, project_id, src.id, snap)
+                try:
+                    classify_project(db, project_id)
+                    create_mappings(db, project_id, "DEV", "hive_metastore")
+                except Exception:
+                    pass
     q=select(MigrationObject).where(MigrationObject.project_id==project_id)
     if object_type:q=q.where(MigrationObject.object_type==object_type.upper())
     objs=db.scalars(q.order_by(MigrationObject.schema_name,MigrationObject.object_name).offset(offset).limit(min(limit,500))).all()
@@ -1507,7 +1584,10 @@ def medallion_artifacts_api(project_id:str,environment:str="DEV",db:Session=Depe
     return list_medallion_artifacts(db,project_id,environment=environment)
 
 @router.get("/projects/{project_id}/medallion/validation-report")
-def medallion_validation_report_api(project_id:str,environment:str="DEV",db:Session=Depends(get_db),_=Depends(auth)):
+def medallion_validation_report_api(project_id:str,environment:str="DEV",db:Session=Depends(get_db),user=Depends(auth)):
+    from app.services.demo_mock import is_demo_user, get_demo_medallion_validation_report
+    if is_demo_user(user.get("sub")):
+        return get_demo_medallion_validation_report(environment)
     return medallion_validation_report(db,project_id,environment=environment)
 
 @router.get("/projects/{project_id}/medallion/artifacts/{version_id}")
